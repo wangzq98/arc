@@ -359,6 +359,7 @@ function arcsettings() {
   fi
   # Get Portmap for Loader
   getmap
+  getportmap
   # Check Warnings
   if [ ${WARNON} -eq 1 ]; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
@@ -906,6 +907,28 @@ function cmdlineMenu() {
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         ;;
       7)
+        dialog --clear --backtitle "$(backtitle)" \
+          --title "i915 Patch" --menu "Fix?" 0 0 0 \
+          1 "Install" \
+          2 "Uninnstall" \
+        2>"${TMP_PATH}/resp"
+        resp="$(<"${TMP_PATH}/resp")"
+        [ -z "${resp}" ] && return 1
+        if [ ${resp} -eq 1 ]; then
+          writeConfigKey "cmdline.i915.enable_guc" "2" "${USER_CONFIG_FILE}"
+          writeConfigKey "cmdline.i915.max_vfs" "7" "${USER_CONFIG_FILE}"
+          dialog --backtitle "$(backtitle)" --title "C-State Fix" \
+            --aspect 18 --msgbox "Fix installed to Cmdline" 0 0
+        elif [ ${resp} -eq 2 ]; then
+          deleteConfigKey "cmdline.i915.enable_guc" "${USER_CONFIG_FILE}"
+          deleteConfigKey "cmdline.i915.max_vfs" "${USER_CONFIG_FILE}"
+          dialog --backtitle "$(backtitle)" --title "C-State Fix" \
+            --aspect 18 --msgbox "Fix uninstalled from Cmdline" 0 0
+        fi
+        writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
+        BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+        ;;
+      8)
         ITEMS=""
         for KEY in ${!CMDLINE[@]}; do
           ITEMS+="${KEY}: ${CMDLINE[$KEY]}\n"
@@ -913,7 +936,7 @@ function cmdlineMenu() {
         dialog --backtitle "$(backtitle)" --title "User cmdline" \
           --aspect 18 --msgbox "${ITEMS}" 0 0
         ;;
-      8)
+      9)
         ITEMS=""
         while IFS=': ' read -r KEY VALUE; do
           ITEMS+="${KEY}: ${VALUE}\n"
@@ -921,7 +944,7 @@ function cmdlineMenu() {
         dialog --backtitle "$(backtitle)" --title "Model/Version cmdline" \
           --aspect 18 --msgbox "${ITEMS}" 0 0
         ;;
-      9)
+      0)
         rm -f "${TMP_PATH}/opts"
         echo "5 \"Reboot after 5 seconds\"" >>"${TMP_PATH}/opts"
         echo "0 \"No reboot\"" >>"${TMP_PATH}/opts"
@@ -1692,6 +1715,7 @@ function storageMenu() {
   DT="$(readModelKey "${MODEL}" "dt")"
   # Get Portmap for Loader
   getmap
+  getportmap
   writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
 }
@@ -1804,8 +1828,8 @@ function sysinfo() {
   TEXT+="\n   MacSys: \Zb${MACSYS}\Zn"
   TEXT+="\n   Bootcount: \Zb${BOOTCOUNT}\Zn"
   TEXT+="\n\Z4>> Addons | Modules\Zn"
-  TEXT+="\n   Loader Addons selected: \Zb${ADDONSINFO}\Zn"
-  TEXT+="\n   Arc Modules loaded: \Zb${MODULESINFO}\Zn"
+  TEXT+="\n   Addons selected: \Zb${ADDONSINFO}\Zn"
+  TEXT+="\n   Loader Modules loaded: \Zb${MODULESINFO}\Zn"
   TEXT+="\n\Z4>> Settings\Zn"
   TEXT+="\n   Static IP: \Zb${STATICIP}\Zn"
   if [[ "${REMAP}" = "acports" || "${REMAP}" = "maxports" ]]; then
@@ -1843,6 +1867,7 @@ function sysinfo() {
           TEXT+="\Zb$(printf "%02d" ${P})\Zn "
         fi
       done
+      TEXT+="\n  Ports with color \Z1\Zbred\Zn as DUMMY, color \Z2\Zbgreen\Zn has drive connected.\n"
       TEXT+="\n"
     done
   fi
@@ -1856,12 +1881,23 @@ function sysinfo() {
       NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
     done
   fi
-  if [ $(ls -l /sys/class/scsi_host | grep usb | wc -l) -gt 0 ]; then
+  if [[ -d "/sys/class/scsi_host" && $(ls -l /sys/class/scsi_host | grep usb | wc -l) -gt 0 ]]; then
     TEXT+="\n USB:\n"
     for PCI in $(lspci -d ::c03 | awk '{print $1}'); do
       NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
       PORT=$(ls -l /sys/class/scsi_host | grep "${PCI}" | awk -F'/' '{print $NF}' | sed 's/host//' | sort -n)
       PORTNUM=$(lsscsi -b | grep -v - | grep "\[${PORT}:" | wc -l)
+      [ ${PORTNUM} -eq 0 ] && continue
+      TEXT+="\Zb  ${NAME}\Zn\n  Drives: ${PORTNUM}\n"
+      NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
+    done
+  fi
+  if [[ -d "/sys/class/mmc_host" && $(ls -l /sys/class/mmc_host | grep mmc_host | wc -l) -gt 0 ]]; then
+    TEXT+="\n MMC:\n"
+    for PCI in $(lspci -d ::805 | awk '{print $1}'); do
+      NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
+      PORTNUM=$(ls -l /sys/class/mmc_host | grep "${PCI}" | wc -l)
+      PORTNUM=$(ls -l /sys/block/mmc* | grep "${PCI}" | wc -l)
       [ ${PORTNUM} -eq 0 ] && continue
       TEXT+="\Zb  ${NAME}\Zn\n  Drives: ${PORTNUM}\n"
       NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
@@ -1877,7 +1913,6 @@ function sysinfo() {
       NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
     done
   fi
-  TEXT+="\n  Ports with color \Z1\Zbred\Zn as DUMMY, color \Z2\Zbgreen\Zn has drive connected.\n"
   TEXT+="\n  Drives total: \Zb${NUMPORTS}\Zn"
   dialog --backtitle "$(backtitle)" --colors --title "Sysinfo" \
     --msgbox "${TEXT}" 0 0
@@ -2163,44 +2198,43 @@ function resetLoader() {
   fi
   if [ ! -f "${USER_CONFIG_FILE}" ]; then
     touch "${USER_CONFIG_FILE}"
-    writeConfigKey "lkm" "prod" "${USER_CONFIG_FILE}"
-    writeConfigKey "model" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "productver" "" "${USER_CONFIG_FILE}"
-    # writeConfigKey "maxdisks" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "layout" "qwertz" "${USER_CONFIG_FILE}"
-    writeConfigKey "keymap" "de" "${USER_CONFIG_FILE}"
-    writeConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "ramdisk-hash" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "cmdline" "{}" "${USER_CONFIG_FILE}"
-    writeConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
-    writeConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
-    writeConfigKey "addons.acpid" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "addons.wol" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc" "{}" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.sn" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.mac1" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.staticip" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.directboot" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.remap" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.patch" "random" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.bootipwait" "20" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.bootwait" "5" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.kernelload" "power" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.kernelpanic" "5" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.bootcount" "0" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.odp" "false" "${USER_CONFIG_FILE}"
-    writeConfigKey "arc.version" "${ARC_VERSION}" "${USER_CONFIG_FILE}"
-    writeConfigKey "device" "{}" "${USER_CONFIG_FILE}"
   fi
+  initConfigKey "lkm" "prod" "${USER_CONFIG_FILE}"
+  initConfigKey "model" "" "${USER_CONFIG_FILE}"
+  initConfigKey "productver" "" "${USER_CONFIG_FILE}"
+  initConfigKey "layout" "qwertz" "${USER_CONFIG_FILE}"
+  initConfigKey "keymap" "de" "${USER_CONFIG_FILE}"
+  initConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
+  initConfigKey "ramdisk-hash" "" "${USER_CONFIG_FILE}"
+  initConfigKey "cmdline" "{}" "${USER_CONFIG_FILE}"
+  initConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
+  initConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
+  initConfigKey "addons.acpid" "" "${USER_CONFIG_FILE}"
+  initConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
+  initConfigKey "arc" "{}" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.sn" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.mac1" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.staticip" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.directboot" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.remap" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.patch" "random" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.bootipwait" "20" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.bootwait" "5" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.kernelload" "power" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.kernelpanic" "5" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.bootcount" "0" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.odp" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.hddsort" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.version" "${ARC_VERSION}" "${USER_CONFIG_FILE}"
+  initConfigKey "device" "{}" "${USER_CONFIG_FILE}"
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
   dialog --backtitle "$(backtitle)" --colors --title "Clean Old" \
@@ -2252,8 +2286,8 @@ while true; do
   echo "a \"Sysinfo \" "                                                                    >>"${TMP_PATH}/menu"
   echo "= \"\Z4========= System =========\Zn \" "                                           >>"${TMP_PATH}/menu"
   if [ "${CONFDONE}" = "true" ]; then
-    echo "b \"Loader Addons \" "                                                            >>"${TMP_PATH}/menu"
-    echo "d \"DSM Modules \" "                                                              >>"${TMP_PATH}/menu"
+    echo "b \"Addons \" "                                                                   >>"${TMP_PATH}/menu"
+    echo "d \"Modules \" "                                                                  >>"${TMP_PATH}/menu"
     if [ "${ARCOPTS}" = "true" ]; then
       echo "4 \"\Z1Hide Arc Options\Zn \" "                                                 >>"${TMP_PATH}/menu"
     else
