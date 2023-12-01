@@ -8,15 +8,12 @@ function availableAddons() {
     ADDON=$(basename ${D})
     checkAddonExist "${ADDON}" "${1}" "${2}" || continue
     SYSTEM=$(readConfigKey "system" "${D}/manifest.yml")
-    [ "${SYSTEM}" = "true" ] && continue
-    while IFS=': ' read -r AVAILABLE; do
-    [ "${AVAILABLE}" = "${1}-${2}" ] && ACTIVATE="true" && break || ACTIVATE="false"
-    done < <(readConfigEntriesArray "available-for" "${D}/manifest.yml")
-    [ "${ACTIVATE}" = "false" ] && continue
+    [ "${SYSTEM}" = true ] && continue
     DESC="$(readConfigKey "description" "${D}/manifest.yml")"
     BETA="$(readConfigKey "beta" "${D}/manifest.yml")"
-    [ "${BETA}" = "true" ] && BETA="(Beta) " || BETA=""
-    echo -e "${ADDON}\t${BETA}${DESC}"
+    ACT="$(readConfigKey "${1}" "${D}/manifest.yml")"
+    [ "${BETA}" = true ] && BETA="(Beta) " || BETA=""
+    [ "${ACT}" = true ] && echo -e "${ADDON}\t${BETA}${DESC}"
   done < <(find "${ADDONS_PATH}" -maxdepth 1 -type d | sort)
 }
 
@@ -55,12 +52,8 @@ function installAddon() {
     tar -zxf "${ADDONS_PATH}/${ADDON}/${PLATFORM}-${KVER}.tgz" -C "${TMP_PATH}/${ADDON}"
     HAS_FILES=1
   fi
-  # Check if addon is available for this platform
-  while IFS=': ' read -r AVAILABLE; do
-    [ "${AVAILABLE}" = "${PLATFORM}-${KVER}" ] && ACTIVATE="true" && break || ACTIVATE="false"
-  done < <(readConfigEntriesArray "available-for" "${ADDONS_PATH}/${ADDON}/manifest.yml")
   # If has files to copy, copy it, else return error
-  [[ ${HAS_FILES} -ne 1 || ${ACTIVATE} = "false" ]] && return 1
+  [ ${HAS_FILES} -ne 1 ] && return 1
   cp -f "${TMP_PATH}/${ADDON}/install.sh" "${RAMDISK_PATH}/addons/${ADDON}.sh" 2>"${LOG_FILE}" || dieLog
   chmod +x "${RAMDISK_PATH}/addons/${ADDON}.sh"
   [ -d ${TMP_PATH}/${ADDON}/root ] && (cp -rnf "${TMP_PATH}/${ADDON}/root/"* "${RAMDISK_PATH}/" 2>"${LOG_FILE}" || dieLog)
