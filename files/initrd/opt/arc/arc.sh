@@ -535,9 +535,11 @@ function make() {
   if [[ -z "${BOOTCOUNT}" || ${BOOTCOUNT} -gt 0 ]]; then
     writeConfigKey "arc.bootcount" "0" "${USER_CONFIG_FILE}"
   fi
-  clear
-  livepatch
-  sleep 3
+  (
+    livepatch
+    sleep 3
+  ) 2>&1 | dialog --backtitle "$(backtitle)" --colors --title "Build Loader" \
+    --progressbox "Doing the Magic..." 20 70
   if [[ -f "${ORI_ZIMAGE_FILE}" && -f "${ORI_RDGZ_FILE}" && -f "${MOD_ZIMAGE_FILE}" && -f "${MOD_RDGZ_FILE}" ]]; then
     # Build is done
     writeConfigKey "arc.version" "${ARC_VERSION}" "${USER_CONFIG_FILE}"
@@ -635,6 +637,9 @@ function addonSelection() {
   ADDONSINFO="$(readConfigEntriesArray "addons" "${USER_CONFIG_FILE}")"
   dialog --backtitle "$(backtitle)" --title "Addons" \
     --msgbox "Loader Addons selected:\n${ADDONSINFO}" 0 0
+  if [ $(readConfigKey "addons.patches" "${USER_CONFIG_FILE}") = "" ]; then
+    writeConfigKey "addons.patches" "1234" "${USER_CONFIG_FILE}"
+  fi
 }
 
 ###############################################################################
@@ -2406,13 +2411,13 @@ while true; do
     echo "v \"Save Modifications to Disk \" "                                               >>"${TMP_PATH}/menu"
     echo "n \"Edit Grub Config \" "                                                         >>"${TMP_PATH}/menu"
     echo "w \"Reset Loader \" "                                                             >>"${TMP_PATH}/menu"
-    echo "+ \"\Z1Format Disk(s)\Zn \" "                                                     >>"${TMP_PATH}/menu"
+    echo "+ \"\Z1Format Sata/NVMe Disk\Zn \" "                                              >>"${TMP_PATH}/menu"
   fi
   echo "= \"\Z4===== Loader Settings ====\Zn \" "                                           >>"${TMP_PATH}/menu"
   echo "x \"Backup/Restore/Recovery \" "                                                    >>"${TMP_PATH}/menu"
   echo "y \"Choose a keymap \" "                                                            >>"${TMP_PATH}/menu"
   echo "z \"Update \" "                                                                     >>"${TMP_PATH}/menu"
-  echo "9 \"Credits \" "                                                                     >>"${TMP_PATH}/menu"
+  echo "9 \"Credits \" "                                                                    >>"${TMP_PATH}/menu"
   echo "0 \"\Z1Exit\Zn \" "                                                                 >>"${TMP_PATH}/menu"
 
   dialog --clear --default-item ${NEXT} --backtitle "$(backtitle)" --colors \
