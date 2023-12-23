@@ -170,10 +170,10 @@ elif [[ "${DIRECTBOOT}" = "true" && ${BOOTCOUNT} -eq 0 ]]; then
   exec reboot
 elif [ "${DIRECTBOOT}" = "false" ]; then
   ETHX=$(ls /sys/class/net/ | grep -v lo || true)
-  NIC=$(ls /sys/class/net/ | grep eth | wc -l)
+  ETH=$(ls /sys/class/net/ | grep eth | wc -l)
   STATICIP="$(readConfigKey "arc.staticip" "${USER_CONFIG_FILE}")"
   BOOTIPWAIT="$(readConfigKey "arc.bootipwait" "${USER_CONFIG_FILE}")"
-  echo -e "\033[1;34mDetected ${NIC} NIC.\033[0m \033[1;37mWaiting for Connection:\033[0m"
+  echo -e "\033[1;34mDetected ${ETH} NIC.\033[0m \033[1;37mWaiting for Connection:\033[0m"
   for N in ${ETHX}; do
     IP=""
     DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
@@ -237,7 +237,7 @@ kexec -l "${MOD_ZIMAGE_FILE}" --initrd "${MOD_RDGZ_FILE}" --command-line="${CMDL
 echo -e "\033[1;37m"Booting DSM..."\033[0m"
 for T in $(w | grep -v "TTY" | awk -F' ' '{print $2}')
 do
-  echo -e "\n\033[1;37mThis interface will not be operational. Wait a few minutes.\nPlease use \033[1;34mhttp://find.synology.com/ \033[1;37mto find DSM and connect.\033[0m\n" >"/dev/${T}" 2>/dev/null || true
+  echo -e "\n\033[1;37mThis interface will not be operational. Wait a few minutes.\nUse \033[1;34mhttp://${IP}:5000\033[0m or try \033[1;34mhttp://find.synology.com/ \033[1;37mto find DSM and proceed.\033[0m\n" >"/dev/${T}" 2>/dev/null || true
 done
 [ "${KERNELLOAD}" = "kexec" ] && kexec -f -e || poweroff
 exit 0

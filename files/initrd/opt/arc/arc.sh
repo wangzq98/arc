@@ -414,6 +414,10 @@ function make() {
   if [ "${PLATFORM}" = "epyc7002" ]; then
     KVER="${PRODUCTVER}-${KVER}"
   fi
+  if [ -d "${UNTAR_PAT_PATH}" ]; then
+    rm -rf "${UNTAR_PAT_PATH}"
+    mkdir -p "${UNTAR_PAT_PATH}"
+  fi
   # Memory: Set mem_max_mb to the amount of installed memory to bypass Limitation
   writeConfigKey "synoinfo.mem_max_mb" "${RAMMAX}" "${USER_CONFIG_FILE}"
   writeConfigKey "synoinfo.mem_min_mb" "${RAMMIN}" "${USER_CONFIG_FILE}"
@@ -542,7 +546,6 @@ function make() {
     --progressbox "Doing the Magic..." 20 70
   if [[ -f "${ORI_ZIMAGE_FILE}" && -f "${ORI_RDGZ_FILE}" && -f "${MOD_ZIMAGE_FILE}" && -f "${MOD_RDGZ_FILE}" ]]; then
     # Build is done
-    writeConfigKey "arc.version" "${ARC_VERSION}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.builddone" "true" "${USER_CONFIG_FILE}"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
     # Ask for Boot
@@ -637,9 +640,6 @@ function addonSelection() {
   ADDONSINFO="$(readConfigEntriesArray "addons" "${USER_CONFIG_FILE}")"
   dialog --backtitle "$(backtitle)" --title "Addons" \
     --msgbox "Loader Addons selected:\n${ADDONSINFO}" 0 0
-  if [ $(readConfigKey "addons.patches" "${USER_CONFIG_FILE}") = "" ]; then
-    writeConfigKey "addons.patches" "1234" "${USER_CONFIG_FILE}"
-  fi
 }
 
 ###############################################################################
@@ -1773,7 +1773,7 @@ function sysinfo() {
   VENDOR="$(dmidecode -s system-product-name)"
   BOARD="$(dmidecode -s baseboard-product-name)"
   ETHX=$(ls /sys/class/net/ | grep -v lo || true)
-  NIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
+  ETH="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
   if [ "${CONFDONE}" = "true" ]; then
@@ -1798,6 +1798,7 @@ function sysinfo() {
   LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
   KERNELLOAD="$(readConfigKey "arc.kernelload" "${USER_CONFIG_FILE}")"
   MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
+  CONFIGVER="$(readConfigKey "arc.version" "${USER_CONFIG_FILE}")"
   HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
   MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
   MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
@@ -1812,7 +1813,7 @@ function sysinfo() {
   TEXT+="\n  CPU: \Zb${CPUINFO}\Zn"
   TEXT+="\n  Memory: \Zb$((${RAMTOTAL} / 1024))GB\Zn"
   TEXT+="\n"
-  TEXT+="\n\Z4> Network: ${NIC} NIC\Zn"
+  TEXT+="\n\Z4> Network: ${ETH} NIC\Zn"
   for N in ${ETHX}; do
     DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
     MAC="$(cat /sys/class/net/${N}/address | sed 's/://g')"
@@ -1859,6 +1860,7 @@ function sysinfo() {
   TEXT+="\n   Arc Settings | Kernelload: \Zb${ARCPATCH} | ${KERNELLOAD}\Zn"
   TEXT+="\n   Directboot: \Zb${DIRECTBOOT}\Zn"
   TEXT+="\n   Config | Build: \Zb${CONFDONE} | ${BUILDDONE}\Zn"
+  TEXT+="\n   Config Version: \Zb${CONFIGVER}\Zn"
   TEXT+="\n   MacSys: \Zb${MACSYS}\Zn"
   TEXT+="\n   Bootcount: \Zb${BOOTCOUNT}\Zn"
   TEXT+="\n\Z4>> Addons | Modules\Zn"
