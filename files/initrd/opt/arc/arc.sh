@@ -85,7 +85,7 @@ function backtitle() {
     BACKTITLE+=" (no IP)"
   fi
   BACKTITLE+=" |"
-  BACKTITLE+=" Settings: ${ARCPATCH}"
+  BACKTITLE+=" Patch: ${ARCPATCH}"
   BACKTITLE+=" |"
   if [ "${CONFDONE}" = "true" ]; then
     BACKTITLE+=" Config: Y"
@@ -436,6 +436,15 @@ function make() {
         return 1
       fi
     done < <(readConfigMap "addons" "${USER_CONFIG_FILE}")
+
+    # Check for eMMC Boot
+    if [[ "${LOADER_DISK}" = /dev/mmcblk* ]]; then
+      echo "Boot Device is eMMC."
+    else
+      deleteConfigKey "modules.mmc_block" "${USER_CONFIG_FILE}"
+      deleteConfigKey "modules.mmc_core" "${USER_CONFIG_FILE}"
+    fi
+
     # Update PAT Data
     PAT_URL_CONF="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
     PAT_HASH_CONF="$(readConfigKey "arc.pathash" "${USER_CONFIG_FILE}")"
@@ -454,7 +463,7 @@ function make() {
         if [[ -n "${PAT_URL}" && -n "${PAT_HASH}" ]]; then
           break
         fi
-        sleep 1
+        sleep 3
         idx=$((${idx} + 1))
       done
       if [[ -z "${PAT_URL}" || -z "${PAT_HASH}" ]]; then
@@ -468,7 +477,7 @@ function make() {
           if [[ -n "${PAT_URL}" && -n "${PAT_HASH}" ]]; then
             break
           fi
-          sleep 1
+          sleep 3
           idx=$((${idx} + 1))
         done
       fi
@@ -1913,7 +1922,7 @@ function sysinfo() {
   TEXT+="\n   Kernel | LKM: \Zb${KVER} | ${LKM}\Zn"
   TEXT+="\n   Platform | DeviceTree: \Zb${PLATFORM} | ${DT}\Zn"
   TEXT+="\n\Z4>> Loader\Zn"
-  TEXT+="\n   Arc Settings | Kernelload: \Zb${ARCPATCH} | ${KERNELLOAD}\Zn"
+  TEXT+="\n   Arc Patch | Kernelload: \Zb${ARCPATCH} | ${KERNELLOAD}\Zn"
   TEXT+="\n   Directboot: \Zb${DIRECTBOOT}\Zn"
   TEXT+="\n   Config | Build: \Zb${CONFDONE} | ${BUILDDONE}\Zn"
   TEXT+="\n   Config Version: \Zb${CONFIGVER}\Zn"
@@ -2130,7 +2139,7 @@ function fullsysinfo() {
   TEXT+="\nPlatform | DeviceTree: ${PLATFORM} | ${DT}"
   TEXT+="\n"
   TEXT+="\nLoader"
-  TEXT+="\nArc Settings | Kernelload: ${ARCPATCH} | ${KERNELLOAD}"
+  TEXT+="\nArc Patch | Kernelload: ${ARCPATCH} | ${KERNELLOAD}"
   TEXT+="\nDirectboot: ${DIRECTBOOT}"
   TEXT+="\nConfig | Build: ${CONFDONE} | ${BUILDDONE}"
   TEXT+="\nConfig Version: ${CONFIGVER}"
