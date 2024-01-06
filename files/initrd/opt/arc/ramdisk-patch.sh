@@ -39,9 +39,6 @@ HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 PRODUCTVERDSM="${majorversion}.${minorversion}"
 PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
 KVER="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")"
-if [ "${PLATFORM}" = "epyc7002" ]; then
-  KVER="${PRODUCTVER}-${KVER}"
-fi
 RD_COMPRESSED="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].rd-compressed")"
 # Read new PAT Info from Config
 PAT_URL="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
@@ -58,6 +55,11 @@ fi
 
 # Sanity check
 [[ -z "${PLATFORM}" || -z "${KVER}" ]] && (die "ERROR: Configuration for Model ${MODEL} and Version ${PRODUCTVER} not found." | tee -a "${LOG_FILE}")
+
+# Modify KVER for Epyc7002
+if [ "${PLATFORM}" = "epyc7002" ]; then
+  KVER="${PRODUCTVER}-${KVER}"
+fi
 
 declare -A SYNOINFO
 declare -A ADDONS
@@ -128,13 +130,15 @@ for F in $(ls "${TMP_PATH}/modules/"*.ko); do
 done
 mkdir -p "${RAMDISK_PATH}/usr/lib/firmware"
 tar -zxf "${MODULES_PATH}/firmware.tgz" -C "${RAMDISK_PATH}/usr/lib/firmware"
+
+# Copying LKM to /usr/lib/modules
+gzip -dc "${LKM_PATH}/rp-${PLATFORM}-${KVER}-${LKM}.ko.gz" >"${TMP_PATH}/modules/rp.ko"
+cp -f "${TMP_PATH}/modules/rp.ko" "${RAMDISK_PATH}/usr/lib/modules/rp.ko"
 # Clean
 rm -rf "${TMP_PATH}/modules"
 
 # Copying fake modprobe
 cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
-# Copying LKM to /usr/lib/modules
-gzip -dc "${LKM_PATH}/rp-${PLATFORM}-${KVER}-${LKM}.ko.gz" >"${RAMDISK_PATH}/usr/lib/modules/rp.ko"
 
 # Addons
 mkdir -p "${RAMDISK_PATH}/addons"
