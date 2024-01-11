@@ -181,8 +181,8 @@ elif [ "${DIRECTBOOT}" = "false" ]; then
     IP=""
     DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
     COUNT=0
-    sleep 2
     while true; do
+      sleep 3
       if [[ "${STATICIP}" = "true" && "${N}" = "eth0" && -n "${ARCIP}" && ${BOOTCOUNT} -gt 0 ]]; then
         ARCIP="$(readConfigKey "arc.ip" "${USER_CONFIG_FILE}")"
         NETMASK="$(readConfigKey "arc.netmask" "${USER_CONFIG_FILE}")"
@@ -200,20 +200,21 @@ elif [ "${DIRECTBOOT}" = "false" ]; then
         [ ! -n "${IPCON}" ] && IPCON="${IP}"
         break
       fi
-      COUNT=$((${COUNT} + 1))
-      if [ ${COUNT} -eq ${BOOTIPWAIT} ]; then
+      if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
         echo -e "\r${DRIVER}: TIMEOUT."
         break
       fi
+      sleep 3
       if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
-        echo -e "\r${DRIVER}: NOT CONNECTED"
+        TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
         break
       fi
-      sleep 1
+      COUNT=$((${COUNT} + 3))
     done
+    ethtool -s ${N} wol g 2>/dev/null
   done
   BOOTWAIT="$(readConfigKey "arc.bootwait" "${USER_CONFIG_FILE}")"
-  [ -z "${BOOTWAIT}" ] && BOOTWAIT=5
+  [ -z "${BOOTWAIT}" ] && BOOTWAIT=0
   w | awk '{print $1" "$2" "$4" "$5" "$6}' >WB
   MSG=""
   while test ${BOOTWAIT} -ge 0; do
@@ -221,7 +222,7 @@ elif [ "${DIRECTBOOT}" = "false" ]; then
     echo -en "\r${MSG}"
     w | awk '{print $1" "$2" "$4" "$5" "$6}' >WC
     if ! diff WB WC >/dev/null 2>&1; then
-      echo -en "\rA new access is connected, Boot is interrupted.\n"
+      echo -en "\rA new access is connected, Boot is interrupted."
       rm -f WB WC
       exit 0
     fi

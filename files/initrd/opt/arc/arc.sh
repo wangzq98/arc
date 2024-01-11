@@ -391,7 +391,7 @@ function arcsettings() {
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
   # Ask for Build
   dialog --clear --backtitle "$(backtitle)" \
-    --menu "Build now?" 0 0 0 \
+    --menu "Config done -> Build now?" 0 0 0 \
     1 "Yes - Build Arc Loader now" \
     2 "No - I want to make changes" \
   2>"${TMP_PATH}/resp"
@@ -577,7 +577,7 @@ function make() {
       BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
       # Ask for Boot
       dialog --clear --backtitle "$(backtitle)" \
-        --menu "Build done. Boot now?" 0 0 0 \
+        --menu "Build done -> Boot now?" 0 0 0 \
         1 "Yes - Boot Arc Loader now" \
         2 "No - I want to make changes" \
       2>"${TMP_PATH}/resp"
@@ -824,7 +824,7 @@ function modulesMenu() {
         ;;
       2)
         dialog --backtitle "$(backtitle)" --colors --title "Modules" \
-          --infobox "Selecting loaded modules" 0 0
+          --infobox "Selecting loaded Modules" 0 0
         KOLIST=""
         for I in $(lsmod | awk -F' ' '{print $1}' | grep -v 'Module'); do
           KOLIST+="$(getdepends "${PLATFORM}" "${KVER}" "${I}") ${I} "
@@ -842,7 +842,7 @@ function modulesMenu() {
         ;;
       3)
         dialog --backtitle "$(backtitle)" --title "Modules" \
-           --infobox "Selecting all modules" 0 0
+           --infobox "Selecting all Modules" 0 0
         unset USERMODULES
         declare -A USERMODULES
         writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
@@ -855,7 +855,7 @@ function modulesMenu() {
         ;;
       4)
         dialog --backtitle "$(backtitle)" --title "Modules" \
-           --infobox "Deselecting all modules" 0 0
+           --infobox "Deselecting all Modules" 0 0
         writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
         unset USERMODULES
         declare -A USERMODULES
@@ -869,7 +869,7 @@ function modulesMenu() {
           echo "${ID} ${DESC} ${ACT}" >>"${TMP_PATH}/opts"
         done < <(getAllModules "${PLATFORM}" "${KVER}")
         dialog --backtitle "$(backtitle)" --title "Modules" --aspect 18 \
-          --checklist "Select modules to include" 0 0 0 \
+          --checklist "Select Modules to include" 0 0 0 \
           --file "${TMP_PATH}/opts" 2>"${TMP_PATH}/resp"
         [ $? -ne 0 ] && continue
         resp="$(<"${TMP_PATH}/resp")"
@@ -1117,6 +1117,7 @@ function synoinfoMenu() {
   echo "1 \"Add/edit Synoinfo item\""     >"${TMP_PATH}/menu"
   echo "2 \"Delete Synoinfo item(s)\""    >>"${TMP_PATH}/menu"
   echo "3 \"Show Synoinfo entries\""      >>"${TMP_PATH}/menu"
+  echo "4 \"Thermal Shutdown\""           >>"${TMP_PATH}/menu"
 
   # menu loop
   while true; do
@@ -1170,6 +1171,47 @@ function synoinfoMenu() {
         done
         dialog --backtitle "$(backtitle)" --title "Synoinfo entries" \
           --aspect 18 --msgbox "${ITEMS}" 0 0
+        ;;
+      4)
+        if [ "${BUILDDONE}" = "true" ]; then
+          if findAndMountDSMRoot; then
+            if [ -f "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml" ]; then
+              cp -f "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml" "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml.bak"
+              dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" \
+              --inputbox "CPU Temperature: (Default 90 °C)" 0 0 \
+              2>"${TMP_PATH}/resp"
+              RET=$?
+              [ ${RET} -ne 0 ] && break 2
+              CPUTEMP="$(<"${TMP_PATH}/resp")"
+              sed -i 's;<cpu_temperature fan_speed="99%40hz" action="SHUTDOWN">90</cpu_temperature>;<cpu_temperature fan_speed="99%40hz" action="SHUTDOWN">${CPUTEMP}</cpu_temperature>;g' "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml"
+              dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" \
+              --inputbox "Disk Temperature: (Default 61 °C)" 0 0 \
+              2>"${TMP_PATH}/resp"
+              RET=$?
+              [ ${RET} -ne 0 ] && break 2
+              DISKTEMP="$(<"${TMP_PATH}/resp")"
+              sed -i 's;<disk_temperature fan_speed="99%40hz" action="SHUTDOWN">61</disk_temperature>;<disk_temperature fan_speed="99%40hz" action="SHUTDOWN">${DISKTEMP}</disk_temperature>;g' "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml"
+              dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" \
+              --inputbox "M.2 Temperature: (Default 70 °C)" 0 0 \
+              2>"${TMP_PATH}/resp"
+              RET=$?
+              [ ${RET} -ne 0 ] && break 2
+              M2TEMP="$(<"${TMP_PATH}/resp")"
+              sed -i 's;<m2_temperature fan_speed="99%40hz" action="SHUTDOWN">70</m2_temperature>;<m2_temperature fan_speed="99%40hz" action="SHUTDOWN">${M2TEMP}</m2_temperature>;g' "${DSMROOT_PATH}/usr/syno/etc.defaults/scemd.xml"
+              dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" --aspect 18 \
+                --msgbox "Change Thermal Shutdown Settings successful!\nCPU: ${CPUTEMP}\nDisk: ${DISKTEMP}\nM.2: ${M2TEMP}" 0 0
+            else
+              dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" --aspect 18 \
+                --msgbox "Change Thermal Shutdown Settings not possible!" 0 0
+            fi
+          else
+            dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" --aspect 18 \
+                --msgbox "Unfortunately Arc couldn't mount the DSM Partition!" 0 0
+          fi
+        else
+          dialog --backtitle "$(backtitle)" --title "Thermal Shutdown" --aspect 18 \
+            --msgbox "Please build and install DSM first!" 0 0
+        fi
         ;;
     esac
   done
@@ -1250,6 +1292,8 @@ function backupMenu() {
         1 "Backup Config with Code" \
         2 "Restore Config with Code" \
         3 "Recover from DSM" \
+        4 "Backup Encryption Key" \
+        5 "Restore Encryption Key" \
         2>"${TMP_PATH}/resp"
       [ $? -ne 0 ] && return 1
       case "$(<"${TMP_PATH}/resp")" in
@@ -1361,12 +1405,48 @@ function backupMenu() {
               --msgbox "Unfortunately Arc couldn't mount the DSM partition!" 0 0
           fi
           ;;
+        4)
+          dialog --backtitle "$(backtitle)" --title "Backup Encryption Key" --aspect 18 \
+            --infobox "Backup Encryption Key..." 0 0
+          if [ -f "${PART2_PATH}/machine.key" ]; then
+            if findAndMountDSMRoot; then
+              mkdir -p "${DSMROOT_PATH}/root/Xpenology_backup"
+              cp -f "${PART2_PATH}/machine.key" "${DSMROOT_PATH}/root/Xpenology_backup/machine.key"
+              dialog --backtitle "$(backtitle)" --title "Backup Encryption Key" --aspect 18 \
+                --msgbox "Encryption Key backup successful!" 0 0
+            else
+              dialog --backtitle "$(backtitle)" --title "Backup Encryption Key" --aspect 18 \
+                --msgbox "Unfortunately Arc couldn't mount the DSM Partition for Backup!" 0 0
+            fi
+          else
+            dialog --backtitle "$(backtitle)" --title "Backup Encryption Key" --aspect 18 \
+              --msgbox "No Encryption Key found!" 0 0
+          fi
+          ;;
+        5)
+          dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+            --infobox "Restore Encryption Key..." 0 0
+          if findAndMountDSMRoot; then
+            if [ -f "${DSMROOT_PATH}/root/Xpenology_backup/machine.key" ]; then
+              cp -f "${DSMROOT_PATH}/root/Xpenology_backup/machine.key" "${PART2_PATH}/machine.key"
+              dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+                --msgbox "Encryption Key restore successful!" 0 0
+            else
+              dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+              --msgbox "No Encryption Key found!" 0 0
+            fi
+          else
+            dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+                --msgbox "Unfortunately Arc couldn't mount the DSM Partition for Restore!" 0 0
+          fi
+          ;;
       esac
     done
   else
     while true; do
       dialog --backtitle "$(backtitle)" --menu "Choose an Option" 0 0 0 \
         1 "Recover from DSM" \
+        2 "Restore Encryption Key" \
         2>"${TMP_PATH}/resp"
       [ $? -ne 0 ] && return 1
       case "$(<"${TMP_PATH}/resp")" in
@@ -1426,6 +1506,23 @@ function backupMenu() {
           else
             dialog --backtitle "$(backtitle)" --title "Try recovery DSM" --aspect 18 \
               --msgbox "Unfortunately Arc couldn't mount the DSM partition!" 0 0
+          fi
+          ;;
+        2)
+          dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+            --infobox "Restore Encryption Key..." 0 0
+          if findAndMountDSMRoot; then
+            if [ -f "${DSMROOT_PATH}/root/Xpenology_backup/machine.key" ]; then
+              cp -f "${DSMROOT_PATH}/root/Xpenology_backup/machine.key" "${PART2_PATH}/machine.key"
+              dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+                --msgbox "Encryption Key restore successful!" 0 0
+            else
+              dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+              --msgbox "No Encryption Key found!" 0 0
+            fi
+          else
+            dialog --backtitle "$(backtitle)" --title "Restore Encryption Key" --aspect 18 \
+                --msgbox "Unfortunately Arc couldn't mount the DSM Partition for Restore!" 0 0
           fi
           ;;
       esac
@@ -1880,14 +1977,11 @@ function sysinfo() {
   TEXT+="\n"
   TEXT+="\n\Z4> Network: ${ETH} NIC\Zn"
   for N in ${ETHX}; do
+    IP=""
     DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
     MAC="$(cat /sys/class/net/${N}/address | sed 's/://g')"
     while true; do
-      if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
-        TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
-        break
-      fi
-      NETIP="$(getIP)"
+      IP="$(getIP ${N})"
       if [ "${STATICIP}" = "true" ]; then
         ARCIP="$(readConfigKey "arc.ip" "${USER_CONFIG_FILE}")"
         if [[ "${N}" = "eth0" && -n "${ARCIP}" ]]; then
@@ -1899,17 +1993,21 @@ function sysinfo() {
       else
         MSG="DHCP"
       fi
-      if [ -n "${NETIP}" ]; then
+      if [ -n "${IP}" ]; then
         SPEED=$(ethtool ${N} | grep "Speed:" | awk '{print $2}')
-        TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}) \ZbIP: ${NETIP} | Mac: ${MAC}\Zn"
+        TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}) \ZbIP: ${IP} | Mac: ${MAC}\Zn"
         break
       fi
-      COUNT=$((${COUNT} + 1))
-      if [ ${COUNT} -eq 3 ]; then
+      if [ ${COUNT} -gt 3 ]; then
         TEXT+="\n  ${DRIVER}: \ZbIP: TIMEOUT | MAC: ${MAC}\Zn"
         break
       fi
-      sleep 1
+      sleep 3
+      if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
+        TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
+        break
+      fi
+      COUNT=$((${COUNT} + 3))
     done
   done
   # Print Config Informations
@@ -2093,14 +2191,11 @@ function fullsysinfo() {
   TEXT+="\n"
   TEXT+="\nNetwork: ${ETH} NIC"
   for N in ${ETHX}; do
+    IP=""
     DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
     MAC="$(cat /sys/class/net/${N}/address | sed 's/://g')"
     while true; do
-      if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
-        TEXT+="\n${DRIVER}: IP: NOT CONNECTED | MAC: ${MAC}"
-        break
-      fi
-      NETIP="$(getIP)"
+      IP="$(getIP ${N})"
       if [ "${STATICIP}" = "true" ]; then
         ARCIP="$(readConfigKey "arc.ip" "${USER_CONFIG_FILE}")"
         if [[ "${N}" = "eth0" && -n "${ARCIP}" ]]; then
@@ -2112,17 +2207,21 @@ function fullsysinfo() {
       else
         MSG="DHCP"
       fi
-      if [ -n "${NETIP}" ]; then
+      if [ -n "${IP}" ]; then
         SPEED=$(ethtool ${N} | grep "Speed:" | awk '{print $2}')
-        TEXT+="\n${DRIVER} (${SPEED} | ${MSG}) IP: ${NETIP} | Mac: ${MAC}"
+        TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}) \ZbIP: ${IP} | Mac: ${MAC}\Zn"
         break
       fi
-      COUNT=$((${COUNT} + 1))
-      if [ ${COUNT} -eq 3 ]; then
-        TEXT+="\n${DRIVER}: IP: TIMEOUT | MAC: ${MAC}"
+      if [ ${COUNT} -gt 3 ]; then
+        TEXT+="\n  ${DRIVER}: \ZbIP: TIMEOUT | MAC: ${MAC}\Zn"
         break
       fi
-      sleep 1
+      sleep 3
+      if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
+        TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
+        break
+      fi
+      COUNT=$((${COUNT} + 3))
     done
   done
   TEXT+="\n"
@@ -2581,7 +2680,7 @@ function resetLoader() {
   initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
   initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
   initConfigKey "arc.bootipwait" "20" "${USER_CONFIG_FILE}"
-  initConfigKey "arc.bootwait" "5" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.bootwait" "0" "${USER_CONFIG_FILE}"
   initConfigKey "arc.kernelload" "power" "${USER_CONFIG_FILE}"
   initConfigKey "arc.kernelpanic" "5" "${USER_CONFIG_FILE}"
   initConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
@@ -2676,8 +2775,8 @@ while true; do
     fi
     if [ "${ADVOPTS}" = "true" ]; then
       echo "= \"\Z4======== Advanced =======\Zn \" "                                        >>"${TMP_PATH}/menu"
-      echo "j \"Cmdline \" "                                                                >>"${TMP_PATH}/menu"
-      echo "k \"Synoinfo \" "                                                               >>"${TMP_PATH}/menu"
+      echo "j \"Cmdline / Fixes \" "                                                        >>"${TMP_PATH}/menu"
+      echo "k \"Synoinfo / Fixes \" "                                                       >>"${TMP_PATH}/menu"
       echo "l \"Edit User Config \" "                                                       >>"${TMP_PATH}/menu"
     fi
     if [ "${BOOTOPTS}" = "true" ]; then

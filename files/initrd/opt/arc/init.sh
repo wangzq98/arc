@@ -49,7 +49,7 @@ initConfigKey "arc.patch" "random" "${USER_CONFIG_FILE}"
 initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
 initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
 initConfigKey "arc.bootipwait" "20" "${USER_CONFIG_FILE}"
-initConfigKey "arc.bootwait" "5" "${USER_CONFIG_FILE}"
+initConfigKey "arc.bootwait" "0" "${USER_CONFIG_FILE}"
 initConfigKey "arc.kernelload" "power" "${USER_CONFIG_FILE}"
 initConfigKey "arc.kernelpanic" "5" "${USER_CONFIG_FILE}"
 initConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
@@ -136,9 +136,8 @@ for N in ${ETHX}; do
   IP=""
   DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
   COUNT=0
-  sleep 2
   while true; do
-    IP=""
+    sleep 3
     if [[ "${STATICIP}" = "true" && "${N}" = "eth0" && -n "${ARCIP}" && ${BOOTCOUNT} -gt 0 ]]; then
       ARCIP="$(readConfigKey "arc.ip" "${USER_CONFIG_FILE}")"
       NETMASK="$(readConfigKey "arc.netmask" "${USER_CONFIG_FILE}")"
@@ -155,17 +154,18 @@ for N in ${ETHX}; do
       echo -e "\r${DRIVER} (${SPEED} | ${MSG}): Access \033[1;34mhttp://${IP}:7681\033[0m to connect to Arc via web."
       break
     fi
-    COUNT=$((${COUNT} + 1))
-    if [ ${COUNT} -eq ${BOOTIPWAIT} ]; then
+    if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
       echo -e "\r${DRIVER}: TIMEOUT"
       break
     fi
+    sleep 3
     if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
-      echo -e "\r${DRIVER}: NOT CONNECTED"
+      TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
       break
     fi
-    sleep 1
+    COUNT=$((${COUNT} + 3))
   done
+  ethtool -s ${N} wol g 2>/dev/null
 done
 
 # Inform user
