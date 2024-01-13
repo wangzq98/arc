@@ -61,9 +61,9 @@ initConfigKey "device" "{}" "${USER_CONFIG_FILE}"
 
 # Init Network
 ETHX=$(ls /sys/class/net/ | grep -v lo || true)
-ETH=$(ls /sys/class/net/ | grep eth | wc -l)
+ETH=$(echo ${ETHX} | wc -w)
 # No network devices
-[ $(echo ${ETHX} | wc -w) -le 0 ] && die "No NIC found! - Loader does not work without Network connection."
+[ ${ETH} -le 0 ] && die "No NIC found! - Loader does not work without Network connection."
 MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
 if [ "${MACSYS}" = "custom" ]; then
   MACR="$(cat /sys/class/net/eth0/address | sed 's/://g')"
@@ -137,7 +137,6 @@ for N in ${ETHX}; do
   DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
   COUNT=0
   while true; do
-    sleep 3
     if [[ "${STATICIP}" = "true" && "${N}" = "eth0" && -n "${ARCIP}" && ${BOOTCOUNT} -gt 0 ]]; then
       ARCIP="$(readConfigKey "arc.ip" "${USER_CONFIG_FILE}")"
       NETMASK="$(readConfigKey "arc.netmask" "${USER_CONFIG_FILE}")"
@@ -155,12 +154,12 @@ for N in ${ETHX}; do
       break
     fi
     if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
-      echo -e "\r${DRIVER}: TIMEOUT"
+      echo -e echo -e "\r\033[1;37m${DRIVER}: TIMEOUT\033[0m"
       break
     fi
     sleep 3
     if ethtool ${N} | grep 'Link detected' | grep -q 'no'; then
-      TEXT+="\n  ${DRIVER}: \ZbIP: NOT CONNECTED | MAC: ${MAC}\Zn"
+      echo -e "\r\033[1;37m${DRIVER}: NOT CONNECTED\033[0m"
       break
     fi
     COUNT=$((${COUNT} + 3))
