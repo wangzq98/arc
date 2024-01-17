@@ -25,7 +25,7 @@ mkdir -p "${RAMDISK_PATH}"
 # Read Model Data
 MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
 LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
-SN="$(readConfigKey "sn" "${USER_CONFIG_FILE}")"
+SN="$(readConfigKey "arc.sn" "${USER_CONFIG_FILE}")"
 LAYOUT="$(readConfigKey "layout" "${USER_CONFIG_FILE}")"
 KEYMAP="$(readConfigKey "keymap" "${USER_CONFIG_FILE}")"
 PLATFORM="$(readModelKey "${MODEL}" "platform")"
@@ -39,6 +39,7 @@ HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 PRODUCTVERDSM="${majorversion}.${minorversion}"
 PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
 KVER="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")"
+KVERM="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")+"
 RD_COMPRESSED="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].rd-compressed")"
 # Read new PAT Info from Config
 PAT_URL="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
@@ -118,14 +119,16 @@ rm -f "${TMP_PATH}/rp.txt"
 # Extract Modules to Ramdisk
 rm -rf "${TMP_PATH}/modules"
 mkdir -p "${TMP_PATH}/modules"
+# Make Modules Path for eudev 3.2.14
+mkdir -p "${RAMDISK_PATH}/usr/lib/modules/${KVERM}"
 tar -zxf "${MODULES_PATH}/${PLATFORM}-${KVER}.tgz" -C "${TMP_PATH}/modules"
 for F in $(ls "${TMP_PATH}/modules/"*.ko 2>/dev/null); do
   M=$(basename ${F})
   [[ "${ODP}" = "true" && -f "${RAMDISK_PATH}/usr/lib/modules/${M}" ]] && continue
   if arrayExistItem "${M:0:-3}" "${!USERMODULES[@]}"; then
-    cp -f "${F}" "${RAMDISK_PATH}/usr/lib/modules/${M}"
+    cp -f "${F}" "${RAMDISK_PATH}/usr/lib/modules/${KVERM}/${M}"
   else
-    rm -f "${RAMDISK_PATH}/usr/lib/modules/${M}"
+    rm -f "${RAMDISK_PATH}/usr/lib/modules/${KVERM}/${M}"
   fi
 done
 mkdir -p "${RAMDISK_PATH}/usr/lib/firmware"
@@ -134,7 +137,8 @@ tar -zxf "${MODULES_PATH}/firmware.tgz" -C "${RAMDISK_PATH}/usr/lib/firmware"
 # Copying fake modprobe
 cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
 # Copying LKM to /usr/lib/modules
-gzip -dc "${LKM_PATH}/rp-${PLATFORM}-${KVER}-${LKM}.ko.gz" >"${RAMDISK_PATH}/usr/lib/modules/rp.ko"
+gzip -dc "${LKM_PATH}/rp-${PLATFORM}-${KVER}-${LKM}.ko.gz" >"${TMP_PATH}/modules/rp.ko"
+cp -f "${TMP_PATH}/modules/rp.ko" "${RAMDISK_PATH}/usr/lib/modules/rp.ko"
 # Clean
 rm -rf "${TMP_PATH}/modules"
 
@@ -161,15 +165,12 @@ installAddon eudev
 echo "/addons/eudev.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 installAddon disks
 echo "/addons/disks.sh \${1} ${HDDSORT} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-[ -f "${USER_UP_PATH}/${MODEL}.dts" ] && cp -f "${USER_UP_PATH}/${MODEL}.dts" "${RAMDISK_PATH}/addons/model.dts"
 installAddon localrss
 echo "/addons/localrss.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 installAddon wol
 echo "/addons/wol.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 installAddon misc
 echo "/addons/misc.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-installAddon expands
-echo "/addons/expands.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 
 # User Addons check
 for ADDON in ${!ADDONS[@]}; do
@@ -188,13 +189,7 @@ echo "inetd" >>"${RAMDISK_PATH}/addons/addons.sh"
 [ "2" = "${BUILDNUM:0:1}" ] && sed -i 's/function //g' $(find "${RAMDISK_PATH}/addons/" -type f -name "*.sh")
 
 # Build modules dependencies
-${WORK_PATH}/depmod -a -b ${RAMDISK_PATH} 2>/dev/null
-# Copying modulelist
-if [ -f "${USER_UP_PATH}/modulelist" ]; then
-  cp -f "${USER_UP_PATH}/modulelist" "${RAMDISK_PATH}/addons/modulelist"
-else
-  cp -f "${PATCH_PATH}/modulelist" "${RAMDISK_PATH}/addons/modulelist"
-fi
+${ARC_PATH}/depmod -a -b ${RAMDISK_PATH} 2>/dev/null
 
 # Network card configuration file
 IPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
