@@ -890,7 +890,7 @@ function modulesMenu() {
         TEXT+="This function is experimental and dangerous. If you don't know much, please exit.\n"
         TEXT+="The imported .ko of this function will be implanted into the corresponding arch's modules package, which will affect all models of the arch.\n"
         TEXT+="This program will not determine the availability of imported modules or even make type judgments, as please double check if it is correct.\n"
-        TEXT+="If you want to remove it, please go to the \"Update Menu\" -> \"Update modules\" to forcibly update the modules. All imports will be reset.\n"
+        TEXT+="If you want to remove it, please go to the \"Update Menu\" -> \"Update Modules\" to forcibly update the modules. All imports will be reset.\n"
         TEXT+="Do you want to continue?"
         dialog --backtitle "$(backtitle)" --title "Add external Module" \
             --yesno "${TEXT}" 0 0
@@ -932,7 +932,7 @@ function cmdlineMenu() {
   while IFS=': ' read -r KEY VALUE; do
     [ -n "${KEY}" ] && CMDLINE["${KEY}"]="${VALUE}"
   done < <(readConfigMap "cmdline" "${USER_CONFIG_FILE}")
-  echo "1 \"Add/edit a Cmdline item\""                          >"${TMP_PATH}/menu"
+  echo "1 \"Add a Cmdline item\""                                >"${TMP_PATH}/menu"
   echo "2 \"Delete Cmdline item(s)\""                           >>"${TMP_PATH}/menu"
   echo "3 \"CPU Fix\""                                          >>"${TMP_PATH}/menu"
   echo "4 \"RAM Fix\""                                          >>"${TMP_PATH}/menu"
@@ -948,21 +948,43 @@ function cmdlineMenu() {
     [ $? -ne 0 ] && return 1
     case "$(<"${TMP_PATH}/resp")" in
       1)
-        dialog --backtitle "$(backtitle)" --title "User cmdline" \
-          --inputbox "Type a name of cmdline" 0 0 \
-          2>"${TMP_PATH}/resp"
-        [ $? -ne 0 ] && continue
-        NAME="$(sed 's/://g' <"${TMP_PATH}/resp")"
-        [ -z "${NAME//\"/}" ] && continue
-        dialog --backtitle "$(backtitle)" --title "User cmdline" \
-          --inputbox "Type a value of '${NAME}' cmdline" 0 0 "${CMDLINE[${NAME}]}" \
-          2>"${TMP_PATH}/resp"
-        [ $? -ne 0 ] && continue
-        VALUE="$(<"${TMP_PATH}/resp")"
-        CMDLINE[${NAME}]="${VALUE}"
-        writeConfigKey "cmdline.\"${NAME//\"/}\"" "${VALUE}" "${USER_CONFIG_FILE}"
-        writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
-        BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+        MSG=""
+        MSG+="Commonly used Parameter:\n"
+        MSG+=" * \Z4disable_mtrr_trim=\Zn\n    disables kernel trim any uncacheable memory out.\n"
+        MSG+=" * \Z4intel_idle.max_cstate=1\Zn\n    Set the maximum C-state depth allowed by the intel_idle driver.\n"
+        MSG+=" * \Z4pcie_port_pm=off\Zn\n    Turn off the power management of the PCIe port.\n"
+        MSG+=" * \Z4libata.force=noncq\Zn\n    Disable NCQ for all SATA ports.\n"
+        MSG+=" * \Z4SataPortMap=??\Zn\n    Sata Port Map.\n"
+        MSG+=" * \Z4DiskIdxMap=??\Zn\n    Disk Index Map, Modify disk name sequence.\n"
+        MSG+=" * \Z4i915.enable_guc=2\Zn\n    Enable the GuC firmware on Intel graphics hardware.(value: 1,2 or 3)\n"
+        MSG+=" * \Z4i915.max_vfs=7\Zn\n     Set the maximum number of virtual functions (VFs) that can be created for Intel graphics hardware.\n"
+        MSG+="\nEnter the Parameter Name and Value you want to add.\n"
+        LINENUM=$(($(echo -e "${MSG}" | wc -l) + 10))
+        while true; do
+          dialog --clear --backtitle "$(backtitle)" --title "User Cmdline" \
+            --form "${MSG}" ${LINENUM:-16} 70 2 "Name:" 1 1 "" 1 10 55 0 "Value:" 2 1 "" 2 10 55 0 \
+            2>"${TMP_PATH}/resp"
+          RET=$?
+          case ${RET} in
+          0) # ok-button
+            NAME="$(cat "${TMP_PATH}/resp" | sed -n '1p')"
+            VALUE="$(cat "${TMP_PATH}/resp" | sed -n '2p')"
+            if [ -z "${NAME//\"/}" ]; then
+                        dialog --clear --backtitle "$(backtitle)" --title "User Cmdline" \
+                --yesno "Invalid Parameter Name, retry?" 0 0
+              [ $? -eq 0 ] && break
+            fi
+            writeConfigKey "cmdline.\"${NAME//\"/}\"" "${VALUE}" "${USER_CONFIG_FILE}"
+            break
+            ;;
+          1) # cancel-button
+            break
+            ;;
+          255) # ESC
+            break
+            ;;
+          esac
+        done
         ;;
       2)
         if [ ${#CMDLINE[@]} -eq 0 ]; then
@@ -998,7 +1020,7 @@ function cmdlineMenu() {
           writeConfigKey "cmdline.nmi_watchdog" "0" "${USER_CONFIG_FILE}"
           writeConfigKey "cmdline.tsc" "reliable" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "CPU Fix" \
-            --aspect 18 --msgbox "Fix installed to Cmdline" 0 0
+            --aspect 18 --msgbox "Fix added to Cmdline" 0 0
         elif [ ${resp} -eq 2 ]; then
           deleteConfigKey "cmdline.nmi_watchdog" "${USER_CONFIG_FILE}"
           deleteConfigKey "cmdline.tsc" "${USER_CONFIG_FILE}"
@@ -1020,12 +1042,12 @@ function cmdlineMenu() {
           writeConfigKey "cmdline.disable_mtrr_trim" "0" "${USER_CONFIG_FILE}"
           writeConfigKey "cmdline.crashkernel" "auto" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "RAM Fix" \
-            --aspect 18 --msgbox "Fix installed to Cmdline" 0 0
+            --aspect 18 --msgbox "Fix added to Cmdline" 0 0
         elif [ ${resp} -eq 2 ]; then
           deleteConfigKey "cmdline.disable_mtrr_trim" "${USER_CONFIG_FILE}"
           deleteConfigKey "cmdline.crashkernel" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "RAM Fix" \
-            --aspect 18 --msgbox "Fix uninstalled from Cmdline" 0 0
+            --aspect 18 --msgbox "Fix removed from Cmdline" 0 0
         fi
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
@@ -1041,7 +1063,7 @@ function cmdlineMenu() {
         if [ ${resp} -eq 1 ]; then
           writeConfigKey "cmdline.pci" "routeirq" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "PCI/IRQ Fix" \
-            --aspect 18 --msgbox "Fix installed to Cmdline" 0 0
+            --aspect 18 --msgbox "Fix added to Cmdline" 0 0
         elif [ ${resp} -eq 2 ]; then
           deleteConfigKey "cmdline.pci" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "PCI/IRQ Fix" \
@@ -1061,7 +1083,7 @@ function cmdlineMenu() {
         if [ ${resp} -eq 1 ]; then
           writeConfigKey "cmdline.intel_idle.max_cstate" "1" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "C-State Fix" \
-            --aspect 18 --msgbox "Fix installed to Cmdline" 0 0
+            --aspect 18 --msgbox "Fix added to Cmdline" 0 0
         elif [ ${resp} -eq 2 ]; then
           deleteConfigKey "cmdline.intel_idle.max_cstate" "${USER_CONFIG_FILE}"
           dialog --backtitle "$(backtitle)" --title "C-State Fix" \
@@ -1266,35 +1288,47 @@ function keymapMenu() {
 function usbMenu() {
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
   if [ "${CONFDONE}" = "true" ]; then
-    dialog --backtitle "$(backtitle)" --menu "Choose an Option" 0 0 0 \
+    dialog --backtitle "$(backtitle)" --title "Mount USB Options" \
+      --menu "Choose an Option" 0 0 0 \
       1 "Mount USB as Internal" \
-      2 "Mount USB as Normal" \
+      2 "Mount USB as Device" \
+      3 "Mount USB automatically" \
       2>"${TMP_PATH}/resp"
     [ $? -ne 0 ] && return 1
     case "$(<"${TMP_PATH}/resp")" in
       1)
         writeConfigKey "synoinfo.maxdisks" "24" "${USER_CONFIG_FILE}"
         writeConfigKey "synoinfo.usbportcfg" "0" "${USER_CONFIG_FILE}"
-        writeConfigKey "synoinfo.internalportcfg" "0xffffffff" "${USER_CONFIG_FILE}"
+        deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.usbmount" "true" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-        dialog --backtitle "$(backtitle)" --title "Mount USB as Internal" \
+        dialog --backtitle "$(backtitle)" --title "Mount USB Options" \
           --aspect 18 --msgbox "Mount USB as Internal - successful!" 0 0
         ;;
       2)
-        deleteConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}"
-        deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.maxdisks" "24" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.usbportcfg" "0xffffffff" "${USER_CONFIG_FILE}"
         deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-        dialog --backtitle "$(backtitle)" --title "Mount USB as Normal" \
-          --aspect 18 --msgbox "Mount USB as Normal - successful!" 0 0
+        dialog --backtitle "$(backtitle)" --title "Mount USB Options" \
+          --aspect 18 --msgbox "Mount USB as Device - successful!" 0 0
+        ;;
+      3)
+        deleteConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}"
+        deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
+        deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
+        writeConfigKey "arc.usbmount" "auto" "${USER_CONFIG_FILE}"
+        writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
+        BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+        dialog --backtitle "$(backtitle)" --title "Mount USB Options" \
+          --aspect 18 --msgbox "Mount USB automatically - successful!" 0 0
         ;;
     esac
   else
-    dialog --backtitle "$(backtitle)" --title "Mount USB as Internal" \
+    dialog --backtitle "$(backtitle)" --title "Mount USB Options" \
       --aspect 18 --msgbox "Please configure your System first." 0 0
     return 1
   fi
@@ -1580,7 +1614,7 @@ function updateMenu() {
           TAG="$(curl --insecure -s https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')"
           if [[ $? -ne 0 || -z "${TAG}" ]]; then
             dialog --backtitle "$(backtitle)" --title "Upgrade Loader" --aspect 18 \
-              --msgbox "Error checking new version!" 0 0
+              --msgbox "Error checking new Version!" 0 0
             return 1
           fi
         elif [ ${opts} -eq 2 ]; then
@@ -1601,7 +1635,7 @@ function updateMenu() {
         STATUS=$(curl --insecure -w "%{http_code}" -L "https://github.com/AuxXxilium/arc/releases/download/${TAG}/arc-${TAG}.img.zip" -o "${TMP_PATH}/arc-${TAG}.img.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Upgrade Loader" --aspect 18 \
-            --msgbox "Error downloading update file" 0 0
+            --msgbox "Error downloading update File!" 0 0
           return 1
         fi
         unzip -oq "${TMP_PATH}/arc-${TAG}.img.zip" -d "${TMP_PATH}"
@@ -1661,7 +1695,7 @@ function updateMenu() {
         STATUS=$(curl --insecure -s -w "%{http_code}" -L "https://github.com/AuxXxilium/arc-addons/releases/download/${TAG}/addons.zip" -o "${TMP_PATH}/addons.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Update Addons" --aspect 18 \
-            --msgbox "Error downloading!" 0 0
+            --msgbox "Error downloading update File!" 0 0
           return 1
         fi
         dialog --backtitle "$(backtitle)" --title "Update Addons" --aspect 18 \
@@ -1712,7 +1746,7 @@ function updateMenu() {
         STATUS=$(curl --insecure -s -w "%{http_code}" -L "https://github.com/AuxXxilium/arc-patches/releases/download/${TAG}/patches.zip" -o "${TMP_PATH}/patches.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Update Patches" --aspect 18 \
-            --msgbox "Error downloading!" 0 0
+            --msgbox "Error downloading update File!" 0 0
           return 1
         fi
         dialog --backtitle "$(backtitle)" --title "Update Patches" --aspect 18 \
@@ -1754,7 +1788,7 @@ function updateMenu() {
         STATUS=$(curl -k -s -w "%{http_code}" -L "https://github.com/AuxXxilium/arc-modules/releases/download/${TAG}/modules.zip" -o "${TMP_PATH}/modules.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Update Modules" --aspect 18 \
-            --msgbox "Error downloading!" 0 0
+            --msgbox "Error downloading update File!" 0 0
           return 1
         fi
         MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
@@ -1810,7 +1844,7 @@ function updateMenu() {
         STATUS=$(curl --insecure -s -w "%{http_code}" -L "https://github.com/AuxXxilium/arc-configs/releases/download/${TAG}/configs.zip" -o "${TMP_PATH}/configs.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Update Configs" --aspect 18 \
-            --msgbox "Error downloading!" 0 0
+            --msgbox "Error downloading update File!" 0 0
           return 1
         fi
         dialog --backtitle "$(backtitle)" --title "Update Configs" --aspect 18 \
@@ -1852,7 +1886,7 @@ function updateMenu() {
         STATUS=$(curl --insecure -s -w "%{http_code}" -L "https://github.com/AuxXxilium/redpill-lkm/releases/download/${TAG}/rp-lkms.zip" -o "${TMP_PATH}/rp-lkms.zip")
         if [[ $? -ne 0 || ${STATUS} -ne 200 ]]; then
           dialog --backtitle "$(backtitle)" --title "Update LKMs" --aspect 18 \
-            --msgbox "Error downloading" 0 0
+            --msgbox "Error downloading update File" 0 0
           return 1
         fi
         dialog --backtitle "$(backtitle)" --title "Update LKMs" --aspect 18 \
@@ -2735,8 +2769,8 @@ while true; do
       echo "f \"Network Config \" "                                                         >>"${TMP_PATH}/menu"
       if [ "${DT}" = "false" ]; then
         echo "g \"Storage Map \" "                                                          >>"${TMP_PATH}/menu"
-        echo "h \"USB Port Config \" "                                                      >>"${TMP_PATH}/menu"
       fi
+      echo "h \"USB Mount Options \" "                                                      >>"${TMP_PATH}/menu"
       echo "p \"Arc Settings \" "                                                           >>"${TMP_PATH}/menu"
       echo ". \"DHCP/Static Loader IP \" "                                                  >>"${TMP_PATH}/menu"
     fi
