@@ -961,7 +961,8 @@ function cmdlineMenu() {
         MSG+="\nEnter the Parameter Name and Value you want to add.\n"
         LINENUM=$(($(echo -e "${MSG}" | wc -l) + 10))
         while true; do
-          dialog --clear --backtitle "$(backtitle)" --title "User Cmdline" \
+          dialog --clear --backtitle "$(backtitle)" \
+            --colors --title "User Cmdline" \
             --form "${MSG}" ${LINENUM:-16} 70 2 "Name:" 1 1 "" 1 10 55 0 "Value:" 2 1 "" 2 10 55 0 \
             2>"${TMP_PATH}/resp"
           RET=$?
@@ -2681,7 +2682,7 @@ function resetLoader() {
   initConfigKey "arc.offline" "false" "${USER_CONFIG_FILE}"
   initConfigKey "arc.directboot" "false" "${USER_CONFIG_FILE}"
   initConfigKey "arc.remap" "" "${USER_CONFIG_FILE}"
-  initConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
+  initConfigKey "arc.usbmount" "auto" "${USER_CONFIG_FILE}"
   initConfigKey "arc.patch" "random" "${USER_CONFIG_FILE}"
   initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
   initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
