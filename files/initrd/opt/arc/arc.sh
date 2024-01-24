@@ -488,8 +488,7 @@ function make() {
       else
         MSG="Successfully got PAT Data.\nPlease confirm or modify as needed."
       fi
-      dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
-        --extra-button --extra-label "Retry" --default-button "OK" \
+      dialog --backtitle "$(backtitle)" --colors --title "Arc Build" --default-button "OK" \
         --form "${MSG}" 10 110 2 "URL" 1 1 "${PAT_URL}" 1 7 100 0 "HASH" 2 1 "${PAT_HASH}" 2 7 100 0 \
         2>"${TMP_PATH}/resp"
       RET=$?
@@ -2816,8 +2815,6 @@ while true; do
   echo "a \"Sysinfo \" "                                                                    >>"${TMP_PATH}/menu"
   echo "= \"\Z4========= System =========\Zn \" "                                           >>"${TMP_PATH}/menu"
   if [ "${CONFDONE}" = "true" ]; then
-    echo "b \"Addons \" "                                                                   >>"${TMP_PATH}/menu"
-    echo "d \"Modules \" "                                                                  >>"${TMP_PATH}/menu"
     if [ "${ARCOPTS}" = "true" ]; then
       echo "4 \"\Z1Hide Arc Options\Zn \" "                                                 >>"${TMP_PATH}/menu"
     else
@@ -2825,6 +2822,8 @@ while true; do
     fi
     if [ "${ARCOPTS}" = "true" ]; then
       echo "= \"\Z4========== Arc ==========\Zn \" "                                        >>"${TMP_PATH}/menu"
+      echo "b \"Addons \" "                                                                 >>"${TMP_PATH}/menu"
+      echo "d \"Modules \" "                                                                >>"${TMP_PATH}/menu"
       echo "e \"DSM Version \" "                                                            >>"${TMP_PATH}/menu"
       echo "f \"Network Config \" "                                                         >>"${TMP_PATH}/menu"
       if [ "${DT}" = "false" ]; then
@@ -2891,7 +2890,7 @@ while true; do
     echo "F \"\Z1Format Sata/NVMe Disk\Zn \" "                                              >>"${TMP_PATH}/menu"
     echo "L \"Grep Logs from dbgutils \" "                                                  >>"${TMP_PATH}/menu"
   fi
-  echo "= \"\Z4===== Loader Settings ====\Zn \" "                                           >>"${TMP_PATH}/menu"
+  echo "= \"\Z4====== Misc Settings =====\Zn \" "                                           >>"${TMP_PATH}/menu"
   echo "x \"Backup/Restore/Recovery \" "                                                    >>"${TMP_PATH}/menu"
   echo "9 \"Offline Mode: \Z4${OFFLINE}\Zn \" "                                             >>"${TMP_PATH}/menu"
   echo "y \"Choose a Keymap \" "                                                            >>"${TMP_PATH}/menu"
@@ -2912,13 +2911,13 @@ while true; do
     # Info Section
     a) sysinfo; NEXT="a" ;;
     # System Section
-    b) addonMenu; NEXT="b" ;;
-    d) modulesMenu; NEXT="d" ;;
     # Arc Section
     4) [ "${ARCOPTS}" = "true" ] && ARCOPTS='false' || ARCOPTS='true'
        ARCOPTS="${ARCOPTS}"
        NEXT="4"
        ;;
+    b) addonMenu; NEXT="b" ;;
+    d) modulesMenu; NEXT="d" ;;
     e) ONLYVERSION="true" && arcbuild; NEXT="e" ;;
     f) networkMenu; NEXT="f" ;;
     g) storageMenu; NEXT="g" ;;
