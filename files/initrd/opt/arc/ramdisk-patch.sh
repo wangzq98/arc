@@ -31,9 +31,9 @@ SN="$(readConfigKey "arc.sn" "${USER_CONFIG_FILE}")"
 LAYOUT="$(readConfigKey "layout" "${USER_CONFIG_FILE}")"
 KEYMAP="$(readConfigKey "keymap" "${USER_CONFIG_FILE}")"
 PLATFORM="$(readModelKey "${MODEL}" "platform")"
-ODP="$(readConfigKey "arc.odp" "${USER_CONFIG_FILE}")"
 HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
+KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
 
 # Check if DSM Version changed
 . "${RAMDISK_PATH}/etc/VERSION"
@@ -54,6 +54,8 @@ if [ "${PRODUCTVERDSM}" != "${PRODUCTVER}" ]; then
   writeConfigKey "productver" "${USER_CONFIG_FILE}"
   PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
   KVER="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")"
+  PATURL=""
+  PATSUM=""
 fi
 
 # Sanity check
@@ -119,22 +121,7 @@ sed -e "/@@@CONFIG-GENERATED@@@/ {" -e "r ${TMP_PATH}/rp.txt" -e 'd' -e '}' -i "
 rm -f "${TMP_PATH}/rp.txt"
 
 # Extract Modules to Ramdisk
-rm -rf "${TMP_PATH}/modules"
-mkdir -p "${TMP_PATH}/modules"
-tar zxf "${MODULES_PATH}/${PLATFORM}-${KVER}.tgz" -C "${TMP_PATH}/modules"
-for F in $(ls "${TMP_PATH}/modules/"*.ko 2>/dev/null); do
-  M=$(basename ${F})
-  [[ "${ODP}" = "true" && -f "${RAMDISK_PATH}/usr/lib/modules/${M}" ]] && continue
-  if arrayExistItem "${M:0:-3}" "${!MODULES[@]}"; then
-    cp -f "${F}" "${RAMDISK_PATH}/usr/lib/modules/${M}"
-  else
-    rm -f "${RAMDISK_PATH}/usr/lib/modules/${M}"
-  fi
-done
-mkdir -p "${RAMDISK_PATH}/usr/lib/firmware"
-tar zxf "${MODULES_PATH}/firmware.tgz" -C "${RAMDISK_PATH}/usr/lib/firmware"
-# Clean
-rm -rf "${TMP_PATH}/modules"
+installModules "${PLATFORM}" "${KVER}" "${!MODULES[@]}"
 
 # Copying fake modprobe
 cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
@@ -156,30 +143,30 @@ echo "export KEYMAP=${KEYMAP}" >>"${RAMDISK_PATH}/addons/addons.sh"
 chmod +x "${RAMDISK_PATH}/addons/addons.sh"
 
 # Required Addons: revert
-installAddon revert
+installAddon "revert" "${PLATFORM}" "${KVER}"
 echo "/addons/revert.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 
 # Install System Addons
-installAddon eudev
-echo "/addons/eudev.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-installAddon disks
+installAddon "eudev" "${PLATFORM}" "${KVER}"
+echo "/addons/eudev.sh \${1} ${KVMSUPPORT}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
+installAddon "disks" "${PLATFORM}" "${KVER}"
 echo "/addons/disks.sh \${1} ${HDDSORT} ${USBMOUNT} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-installAddon misc
+installAddon "misc" "${PLATFORM}" "${KVER}"
 echo "/addons/misc.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-installAddon localrss
+installAddon "localrss" "${PLATFORM}" "${KVER}"
 echo "/addons/localrss.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
-installAddon wol
+installAddon "wol" "${PLATFORM}" "${KVER}"
 echo "/addons/wol.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 
 # User Addons check
 for ADDON in ${!ADDONS[@]}; do
   PARAMS=${ADDONS[${ADDON}]}
-  if ! installAddon ${ADDON}; then
+  if ! installAddon "${ADDON}" "${PLATFORM}" "${KVER}"; then
     echo -n "${ADDON} is not available for this Platform!" | tee -a "${LOG_FILE}"
     echo
     exit 1
   fi
-  echo "/addons/${ADDON}.sh \${1} ${PARAMS} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
+  echo "/addons/${ADDON}.sh \${1} ${PARAMS}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 done
 
 # Enable Telnet
@@ -200,21 +187,10 @@ fi
 IPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
 ETHX=$(ls /sys/class/net/ | grep -v lo) || true
 for ETH in ${ETHX}; do
-  STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
-  if [ "${STATICIP}" = "true" ]; then
-    IPADDR="$(readConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}")"
-    NETMASK="$(readConfigKey "netmask.${ETH}" "${USER_CONFIG_FILE}")"
-    if [ "${IPV6}" = "true" ]; then
-      echo -e "DEVICE=${ETH}\nBOOTPROTO=static\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1\nIPADDR=${IPADDR}\nNETMASK=${NETMASK}" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-    else
-      echo -e "DEVICE=${ETH}\nBOOTPROTO=static\nONBOOT=yes\nIPV6INIT=no\nIPADDR=${IPADDR}\nNETMASK=${NETMASK}" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-    fi
+  if [ "${IPV6}" = "true" ]; then
+    echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
   else
-    if [ "${IPV6}" = "true" ]; then
-      echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-    else
-      echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=no" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-    fi
+    echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=no" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
   fi
 done
 
