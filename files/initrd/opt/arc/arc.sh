@@ -31,8 +31,11 @@ fi
 # Get Loader Disk Bus
 BUS=$(getBus "${LOADER_DISK}")
 
-# Set Warning to 0
-WARNON=0
+# Set Warning to false
+WARNON1="false"
+WARNON2="false"
+WARNON3="false"
+WARNON4="false"
 
 # Get DSM Data from Config
 MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
@@ -66,7 +69,10 @@ OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
 
 if [ "${OFFLINE}" = "false" ]; then
   # Update Check
-  NEWTAG="$(curl --insecure -s https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')"
+  NEWTAG="$(curl --insecure -m 5 -s https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')"
+  if [ -z "${NEWTAG}" ]; then
+    NEWTAG="${ARC_VERSION}"
+  fi
 fi
 
 ###############################################################################
@@ -172,10 +178,6 @@ function arcMenu() {
   if [ "${MODEL}" != "${resp}" ]; then
     MODEL="${resp}"
     DT="$(readModelKey "${MODEL}" "dt")"
-    # Check for AES
-    if ! grep -q "^flags.*aes.*" /proc/cpuinfo; then
-      WARNON=4
-    fi
     PRODUCTVER=""
     writeConfigKey "model" "${MODEL}" "${USER_CONFIG_FILE}"
     writeConfigKey "productver" "" "${USER_CONFIG_FILE}"
@@ -363,15 +365,23 @@ function arcsettings() {
   # Select Addons
   addonSelection
   # Check Warnings
-  if [ ${WARNON} -eq 1 ]; then
+  if [ "${WARNON1}" = "true" ]; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
-      --msgbox "WARN: Your Controller has more then 8 Disks connected. Max Disks per Controller: 8" 0 0
+      --msgbox "WARN: Your Controller has more then 8 Disks connected.\nMax Disks per Controller: 8" 0 0
   fi
-  if [ ${WARNON} -eq 3 ]; then
+  # Check for DT and SAS/SCSI
+  if [ "${DT}" = "true" ] && [[ ${SASCONTROLLER} -gt 0 || ${SCSICONTROLLER} -gt 0 ]]; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
-      --msgbox "WARN: You have more then 8 Ethernet Ports. There are only 8 supported by DSM." 0 0
+      --msgbox "WARN: You use a HBA/Raid Controller and selected a DT Model.\nThis is still an experimental Feature." 0 0
   fi
-  if [ ${WARNON} -eq 4 ]; then
+  # Check for more then 8 Ethernet Ports
+  DEVICENIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
+  if [ "${DEVICENIC}" -gt 8 ]; then
+    dialog --backtitle "$(backtitle)" --title "Arc Warning" \
+      --msgbox "WARN: You have more then 8 Ethernet Ports.\nThere are only 8 supported by DSM." 0 0
+  fi
+  # Check for AES
+  if ! grep -q "^flags.*aes.*" /proc/cpuinfo; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
       --msgbox "WARN: Your CPU does not have AES Support for Hardwareencryption in DSM." 0 0
   fi
@@ -471,8 +481,8 @@ function make() {
         --infobox "Get PAT Data from Syno..." 3 30
       idx=0
       while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
-        PAT_URL="$(curl -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
-        PAT_HASH="$(curl -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].checksum')"
+        PAT_URL="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
+        PAT_HASH="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].checksum')"
         PAT_URL=${PAT_URL%%\?*}
         if [[ -n "${PAT_URL}" && -n "${PAT_HASH}" ]]; then
           break
@@ -485,8 +495,8 @@ function make() {
           --infobox "Syno Connection failed,\ntry to get from Github..." 4 30
         idx=0
         while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
-          PAT_URL="$(curl -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER%%.*}.${PRODUCTVER##*.}/pat_url")"
-          PAT_HASH="$(curl -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER%%.*}.${PRODUCTVER##*.}/pat_hash")"
+          PAT_URL="$(curl -m 5-skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER%%.*}.${PRODUCTVER##*.}/pat_url")"
+          PAT_HASH="$(curl -m 5 -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER%%.*}.${PRODUCTVER##*.}/pat_hash")"
           PAT_URL=${PAT_URL%%\?*}
           if [[ -n "${PAT_URL}" && -n "${PAT_HASH}" ]]; then
             break
@@ -1980,7 +1990,7 @@ function sysinfo() {
     IP=""
     STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
     DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
-    MAC="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
+    MAC="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
     COUNT=0
     while true; do
       if [ "${STATICIP}" = "true" ]; then
