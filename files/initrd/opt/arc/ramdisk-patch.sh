@@ -34,6 +34,7 @@ PLATFORM="$(readModelKey "${MODEL}" "platform")"
 HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
 KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
+MODULESCOPY="$(readConfigKey "arc.modulescopy" "${USER_CONFIG_FILE}")"
 
 # Check if DSM Version changed
 . "${RAMDISK_PATH}/etc/VERSION"
@@ -148,7 +149,7 @@ echo "/addons/revert.sh \${1} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FI
 
 # Install System Addons
 installAddon "eudev" "${PLATFORM}" "${KVER}"
-echo "/addons/eudev.sh \${1} ${KVMSUPPORT}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
+echo "/addons/eudev.sh \${1} ${MODULESCOPY} ${KVMSUPPORT} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 installAddon "disks" "${PLATFORM}" "${KVER}"
 echo "/addons/disks.sh \${1} ${HDDSORT} ${USBMOUNT} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 installAddon "misc" "${PLATFORM}" "${KVER}"
@@ -166,7 +167,7 @@ for ADDON in ${!ADDONS[@]}; do
     echo
     exit 1
   fi
-  echo "/addons/${ADDON}.sh \${1} ${PARAMS}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
+  echo "/addons/${ADDON}.sh \${1} ${PARAMS} " >>"${RAMDISK_PATH}/addons/addons.sh" 2>"${LOG_FILE}" || dieLog
 done
 
 # Enable Telnet
@@ -199,6 +200,12 @@ if [ "${PLATFORM}" = "epyc7002" ]; then
   echo -e "Apply Epyc7002 Fixes"
   sed -i 's#/dev/console#/var/log/lrc#g' ${RAMDISK_PATH}/usr/bin/busybox
   sed -i '/^echo "START/a \\nmknod -m 0666 /dev/console c 1 3' ${RAMDISK_PATH}/linuxrc.syno
+fi
+
+# Broadwellntbap patches
+if [ "${PLATFORM}" = "broadwellntbap" ]; then
+  echo -e "Apply Broadwellntbap Fixes"
+  sed -i 's/IsUCOrXA="yes"/XIsUCOrXA="yes"/g; s/IsUCOrXA=yes/XIsUCOrXA=yes/g' ${RAMDISK_PATH}/usr/syno/share/environments.sh
 fi
 
 # Call user patch scripts
