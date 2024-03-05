@@ -60,6 +60,7 @@ USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
 ARCIPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
 EMMCBOOT="$(readConfigKey "arc.emmcboot" "${USER_CONFIG_FILE}")"
 OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
+EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
 
 if [ "${OFFLINE}" = "false" ]; then
   # Update Check
@@ -140,7 +141,7 @@ function arcMenu() {
             fi
           done
           for F in "$(readModelArray "${M}" "dt")"; do
-            if [ "${DT}" = "true" ] && [[ ${SASCONTROLLER} -gt 0 || ${SCSICONTROLLER} -gt 0 ]]; then
+            if [ "${DT}" = "true" ] && [ "${EXTERNALCONTROLLER}" = "true" ]; then
               COMPATIBLE=0
               FLGNEX=1
               break
@@ -229,7 +230,7 @@ function arcbuild() {
     KVER="${PRODUCTVER}-${KVER}"
   fi
   dialog --backtitle "$(backtitle)" --title "Arc Config" \
-    --infobox "Reconfiguring Synoinfo, Cmdline and Modules" 3 46
+    --infobox "Reconfiguring Synoinfo, Cmdline and Modules" 3 50
   # Reset synoinfo
   writeConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
   while IFS=': ' read -r KEY VALUE; do
@@ -334,12 +335,20 @@ function arcsettings() {
   fi
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   # Get Network Config for Loader
+  dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
+    --infobox "Get Network Config..." 3 30
   getnet
   if [ "${ONLYPATCH}" = "true" ]; then
     return 1
   fi
   # Get Portmap for Loader
+  dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
+    --infobox "Get Storage Map..." 3 30
   getmap
+  # Select Storagemap
+  if [[ "${DT}" = "false" && $(lspci -d ::106 | wc -l) -gt 0 ]]; then
+    getmapSelection
+  fi
   # Select Addons
   addonSelection
   # Check Warnings
@@ -348,7 +357,7 @@ function arcsettings() {
       --msgbox "WARN: Your Controller has more then 8 Disks connected.\nMax Disks per Controller: 8" 0 0
   fi
   # Check for DT and SAS/SCSI
-  if [[ "${DT}" = "true" && ${SASCONTROLLER} -gt 0 || ${SCSICONTROLLER} -gt 0 ]]; then
+  if [[ "${DT}" = "true" && "${EXTERNALCONTROLLER}" = "true" ]]; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
       --msgbox "WARN: You use a HBA/Raid Controller and selected a DT Model.\nThis is still an experimental Feature." 0 0
   fi
@@ -408,11 +417,19 @@ function make() {
   if [ "${USBMOUNT}" = "true" ]; then
     DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
     writeConfigKey "synoinfo.maxdisks" "${DRIVES}" "${USER_CONFIG_FILE}"
+    deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
+    deleteConfigKey "synoinfo.esataportcfg" "${USER_CONFIG_FILE}"
+    deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
+  elif [ "${USBMOUNT}" = "force" ]; then
+    writeConfigKey "synoinfo.maxdisks" "26" "${USER_CONFIG_FILE}"
     writeConfigKey "synoinfo.usbportcfg" "0x00" "${USER_CONFIG_FILE}"
     writeConfigKey "synoinfo.esataportcfg" "0x00" "${USER_CONFIG_FILE}"
     writeConfigKey "synoinfo.internalportcfg" "0x3ffffff" "${USER_CONFIG_FILE}"
   else
     HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
+    #if [ "${BUS}" = "usb" ]; then
+    #  HARDDRIVES=$((${HARDDRIVES} + 1))
+    #fi
     writeConfigKey "synoinfo.maxdisks" "${HARDDRIVES}" "${USER_CONFIG_FILE}"
     deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
     deleteConfigKey "synoinfo.esataportcfg" "${USER_CONFIG_FILE}"
@@ -556,12 +573,12 @@ function make() {
           LD_LIBRARY_PATH="${EXTRACTOR_PATH}" "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_FILE}" "${UNTAR_PAT_PATH}"
         else
           # Untar PAT file
-          tar -xf "${PAT_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
+          tar xf "${PAT_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
         fi
         # Cleanup PAT Download
         rm -f "${PAT_FILE}"
       elif [ -f "${DSM_FILE}" ]; then
-        tar -xf "${DSM_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
+        tar xf "${DSM_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
       elif [ ! -f "${UNTAR_PAT_PATH}/zImage" ]; then
         dialog --backtitle "$(backtitle)" --title "DSM Download" --aspect 18 \
           --msgbox "ERROR: No DSM Image found!" 0 0
@@ -648,7 +665,7 @@ function offlinemake() {
       LD_LIBRARY_PATH="${EXTRACTOR_PATH}" "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_FILE}" "${UNTAR_PAT_PATH}"
     else
       # Untar PAT file
-      tar -xf "${PAT_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
+      tar xf "${PAT_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>&1
     fi
     # Cleanup old PAT
     rm -f "${PAT_FILE}"
@@ -1123,7 +1140,8 @@ function synoinfoMenu() {
   echo "1 \"Add/edit Synoinfo item\""     >"${TMP_PATH}/menu"
   echo "2 \"Delete Synoinfo item(s)\""    >>"${TMP_PATH}/menu"
   echo "3 \"Show Synoinfo entries\""      >>"${TMP_PATH}/menu"
-  echo "4 \"Thermal Shutdown (DT only)\"" >>"${TMP_PATH}/menu"
+  echo "4 \"Add optimized Synoinfo\""     >>"${TMP_PATH}/menu"
+  echo "5 \"Thermal Shutdown (DT only)\"" >>"${TMP_PATH}/menu"
 
   # menu loop
   while true; do
@@ -1179,6 +1197,16 @@ function synoinfoMenu() {
           --aspect 18 --msgbox "${ITEMS}" 0 0
         ;;
       4)
+        writeConfigKey "synoinfo.support_oob_ctl" "no" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.support_trim" "yes" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.support_disk_hibernation" "yes" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.support_bde_internal_10g" "no" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.support_btrfs_dedupe" "yes" "${USER_CONFIG_FILE}"
+        writeConfigKey "synoinfo.support_tiny_btrfs_dedupe" "yes" "${USER_CONFIG_FILE}"
+        dialog --backtitle "$(backtitle)" --title "Optimized Synoinfo entries" \
+          --aspect 18 --msgbox "Optimized Synoinfo is written to Config." 0 0
+        ;;
+      5)
         MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
         CONFDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         PLATFORM="$(readModelKey "${MODEL}" "platform")"
@@ -1713,7 +1741,7 @@ function updateMenu() {
           ADDON=$(basename ${PKG} | sed 's|.addon||')
           rm -rf "${ADDONS_PATH}/${ADDON:?}"
           mkdir -p "${ADDONS_PATH}/${ADDON}"
-          tar -xaf "${PKG}" -C "${ADDONS_PATH}/${ADDON}" >/dev/null 2>&1
+          tar xaf "${PKG}" -C "${ADDONS_PATH}/${ADDON}" >/dev/null 2>&1
           rm -f "${ADDONS_PATH}/${ADDON}.addon"
         done
         rm -f "${TMP_PATH}/addons.zip"
@@ -1915,6 +1943,9 @@ function storageMenu() {
   DT="$(readModelKey "${MODEL}" "dt")"
   # Get Portmap for Loader
   getmap
+  if [[ "${DT}" = "false" && $(lspci -d ::106 | wc -l) -gt 0 ]]; then
+    getmapSelection
+  fi
   writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
 }
@@ -1967,6 +1998,7 @@ function sysinfo() {
   CONFIGVER="$(readConfigKey "arc.version" "${USER_CONFIG_FILE}")"
   HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
+  EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
   MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
   MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
   ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
@@ -2046,8 +2078,9 @@ function sysinfo() {
     TEXT+="\n   USB Mount: \Zb${USBMOUNT}\Zn"
   fi
   TEXT+="\n"
-  # Check for Controller // 104=RAID // 106=SATA // 107=SAS
+  # Check for Controller // 104=RAID // 106=SATA // 107=SAS // 100=SCSI // c03=USB
   TEXT+="\n\Z4> Storage\Zn"
+  TEXT+="\n  External Controller: \Zb${EXTERNALCONTROLLER}\Zn"
   # Get Information for Sata Controller
   NUMPORTS=0
   if [ $(lspci -d ::106 | wc -l) -gt 0 ]; then
@@ -2083,8 +2116,18 @@ function sysinfo() {
     done
   fi
   if [ $(lspci -d ::104 | wc -l) -gt 0 ]; then
-    TEXT+="\n  Raid/SCSI Controller:\n"
+    TEXT+="\n  Raid Controller:\n"
     for PCI in $(lspci -d ::104 | awk '{print $1}'); do
+      NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
+      PORT=$(ls -l /sys/class/scsi_host | grep "${PCI}" | awk -F'/' '{print $NF}' | sed 's/host//' | sort -n)
+      PORTNUM=$(lsscsi -b | grep -v - | grep "\[${PORT}:" | wc -l)
+      TEXT+="\Zb  ${NAME}\Zn\n  Drives: ${PORTNUM}\n"
+      NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
+    done
+  fi
+  if [ $(lspci -d ::100 | wc -l) -gt 0 ]; then
+    TEXT+="\n  SCSI Controller:\n"
+    for PCI in $(lspci -d ::100 | awk '{print $1}'); do
       NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
       PORT=$(ls -l /sys/class/scsi_host | grep "${PCI}" | awk -F'/' '{print $NF}' | sed 's/host//' | sort -n)
       PORTNUM=$(lsscsi -b | grep -v - | grep "\[${PORT}:" | wc -l)
@@ -2182,6 +2225,7 @@ function fullsysinfo() {
   CONFIGVER="$(readConfigKey "arc.version" "${USER_CONFIG_FILE}")"
   HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
+  EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
   MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
   MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
   ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
@@ -2269,8 +2313,9 @@ function fullsysinfo() {
     TEXT+="\nUSB Mount: ${USBMOUNT}"
   fi
   TEXT+="\n"
-  # Check for Controller // 104=RAID // 106=SATA // 107=SAS
+  # Check for Controller // 104=RAID // 106=SATA // 107=SAS // 100=SCSI // c03=USB
   TEXT+="\nStorage"
+  TEXT+="\nExternal Controller: ${EXTERNALCONTROLLER}"
   # Get Information for Sata Controller
   NUMPORTS=0
   if [ $(lspci -d ::106 | wc -l) -gt 0 ]; then
@@ -2304,12 +2349,22 @@ function fullsysinfo() {
     done
   fi
   if [ $(lspci -d ::104 | wc -l) -gt 0 ]; then
-    TEXT+="\nRaid/SCSI Controller:\n"
+    TEXT+="\nRaid Controller:\n"
     for PCI in $(lspci -d ::104 | awk '{print $1}'); do
       NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
       PORT=$(ls -l /sys/class/scsi_host | grep "${PCI}" | awk -F'/' '{print $NF}' | sed 's/host//' | sort -n)
       PORTNUM=$(lsscsi -b | grep -v - | grep "\[${PORT}:" | wc -l)
       TEXT+="${NAME}\nDrives: ${PORTNUM}\n"
+      NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
+    done
+  fi
+  if [ $(lspci -d ::100 | wc -l) -gt 0 ]; then
+    TEXT+="\nSCSI Controller:\n"
+    for PCI in $(lspci -d ::100 | awk '{print $1}'); do
+      NAME=$(lspci -s "${PCI}" | sed "s/\ .*://")
+      PORT=$(ls -l /sys/class/scsi_host | grep "${PCI}" | awk -F'/' '{print $NF}' | sed 's/host//' | sort -n)
+      PORTNUM=$(lsscsi -b | grep -v - | grep "\[${PORT}:" | wc -l)
+      TEXT+="${NAME}\n  Drives: ${PORTNUM}\n"
       NUMPORTS=$((${NUMPORTS} + ${PORTNUM}))
     done
   fi
@@ -2746,7 +2801,8 @@ function greplogs() {
   dialog --backtitle "$(backtitle)" --colors --title "Grep Logs" \
     --infobox "Copy Log Files." 3 20
   sleep 2
-  tar -cfz "${TMP_PATH}/log.tar.gz" "${PART1_PATH}/logs" >/dev/null 2>&1
+  tar cfz "${PART1_PATH}/log.tar.gz" "${PART1_PATH}/logs"
+  mv -f "${PART1_PATH}/log.tar.gz" "${TMP_PATH}/log.tar.gz"
   dialog --backtitle "$(backtitle)" --colors --title "Grep Logs" \
     --msgbox "Logs can be found at /tmp/log.tar.gz" 5 40
 }
@@ -2812,9 +2868,12 @@ while true; do
       echo "p \"Arc Patch Settings \" "                                                     >>"${TMP_PATH}/menu"
       echo "N \"Network Config \" "                                                         >>"${TMP_PATH}/menu"
       if [ "${DT}" = "false" ]; then
-        echo "S \"Storage Map \" "                                                          >>"${TMP_PATH}/menu"
+        echo "S \"Update Storage Map \" "                                                   >>"${TMP_PATH}/menu"
       fi
       echo "U \"USB Mount: \Z4${USBMOUNT}\Zn \" "                                           >>"${TMP_PATH}/menu"
+      if [ "${DT}" = "false" ]; then
+        echo "W \"Force USB Mount \" "                                                      >>"${TMP_PATH}/menu"
+      fi
       echo "P \"Custom StoragePanel \" "                                                    >>"${TMP_PATH}/menu"
       echo "D \"Loader DHCP/StaticIP \" "                                                   >>"${TMP_PATH}/menu"
     fi
@@ -2917,6 +2976,12 @@ while true; do
       writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
       BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
       NEXT="U"
+      ;;
+    W) USBMOUNT='force'
+      writeConfigKey "arc.usbmount" "force" "${USER_CONFIG_FILE}"
+      writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
+      BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+      NEXT="W"
       ;;
     P) storagepanelMenu; NEXT="P" ;;
     D) staticIPMenu; NEXT="D" ;;
