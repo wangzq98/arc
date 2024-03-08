@@ -336,27 +336,22 @@ function arcsettings() {
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   # Get Network Config for Loader
   dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
-    --infobox "Get Network Config..." 3 30
+    --infobox "Network Config..." 3 30
   getnet
   if [ "${ONLYPATCH}" = "true" ]; then
     return 1
   fi
   # Get Portmap for Loader
-  dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
-    --infobox "Get Storage Map..." 3 30
   getmap
-  # Select Storagemap
+  # Select Portmap for Loader (nonDT)
   if [[ "${DT}" = "false" && $(lspci -d ::106 | wc -l) -gt 0 ]]; then
+    dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
+      --infobox "Storage Map..." 3 30
     getmapSelection
   fi
   # Select Addons
   addonSelection
-  # Check Warnings
-  if [ "${WARNON1}" = "true" ]; then
-    dialog --backtitle "$(backtitle)" --title "Arc Warning" \
-      --msgbox "WARN: Your Controller has more then 8 Disks connected.\nMax Disks per Controller: 8" 0 0
-  fi
-  # Check for DT and SAS/SCSI
+  # Check for DT and HBA/Raid Controller
   if [[ "${DT}" = "true" && "${EXTERNALCONTROLLER}" = "true" ]]; then
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
       --msgbox "WARN: You use a HBA/Raid Controller and selected a DT Model.\nThis is still an experimental Feature." 0 0
@@ -372,11 +367,12 @@ function arcsettings() {
     dialog --backtitle "$(backtitle)" --title "Arc Warning" \
       --msgbox "WARN: Your CPU does not have AES Support for Hardwareencryption in DSM." 0 0
   fi
+  # Check for KVM
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
   if [ "${KVMSUPPORT}" = "true" ]; then
     if ! grep -q "^flags.*vmx.*" /proc/cpuinfo | grep -q "^flags.*svm.*" /proc/cpuinfo; then
       dialog --backtitle "$(backtitle)" --title "Arc Warning" \
-        --msgbox "WARN: Your CPU does not support VMM/KVM in DSM.\nCheck CPU/Bios for VMX or SVM Support." 0 0
+        --msgbox "WARN: Your CPU does not support KVM in DSM.\nCheck CPU/Bios for VMX or SVM Support." 0 0
     fi
   fi
   # Config is done
@@ -401,11 +397,12 @@ function arcsettings() {
 ###############################################################################
 # Building Loader Online
 function make() {
-  # Read Config
+  # Read Model Config
   MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
   PLATFORM="$(readModelKey "${MODEL}" "platform")"
   PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
   KVER="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")"
+  DT="$(readModelKey "${MODEL}" "dt")"
   # Read Config for Arc Settings
   USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
@@ -413,28 +410,6 @@ function make() {
   # Memory: Set mem_max_mb to the amount of installed memory to bypass Limitation
   writeConfigKey "synoinfo.mem_max_mb" "${RAMMAX}" "${USER_CONFIG_FILE}"
   writeConfigKey "synoinfo.mem_min_mb" "${RAMMIN}" "${USER_CONFIG_FILE}"
-  # USBMount Support
-  if [ "${USBMOUNT}" = "true" ]; then
-    DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
-    writeConfigKey "synoinfo.maxdisks" "${DRIVES}" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.esataportcfg" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
-  elif [ "${USBMOUNT}" = "force" ]; then
-    writeConfigKey "synoinfo.maxdisks" "26" "${USER_CONFIG_FILE}"
-    writeConfigKey "synoinfo.usbportcfg" "0x00" "${USER_CONFIG_FILE}"
-    writeConfigKey "synoinfo.esataportcfg" "0x00" "${USER_CONFIG_FILE}"
-    writeConfigKey "synoinfo.internalportcfg" "0x3ffffff" "${USER_CONFIG_FILE}"
-  else
-    HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
-    #if [ "${BUS}" = "usb" ]; then
-    #  HARDDRIVES=$((${HARDDRIVES} + 1))
-    #fi
-    writeConfigKey "synoinfo.maxdisks" "${HARDDRIVES}" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.usbportcfg" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.esataportcfg" "${USER_CONFIG_FILE}"
-    deleteConfigKey "synoinfo.internalportcfg" "${USER_CONFIG_FILE}"
-  fi
   # KVM Support
   if [ "${KVMSUPPORT}" = "true" ]; then
     writeConfigKey "modules.kvm_intel" "" "${USER_CONFIG_FILE}"
@@ -773,8 +748,6 @@ function addonSelection() {
     --file "${TMP_PATH}/opts" 2>"${TMP_PATH}/resp"
   [ $? -ne 0 ] && return 1
   resp="$(<"${TMP_PATH}/resp")"
-  dialog --backtitle "$(backtitle)" --title "Addons" \
-      --infobox "Writing to user config" 5 30
   unset ADDONS
   declare -A ADDONS
   writeConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
@@ -1999,6 +1972,8 @@ function sysinfo() {
   HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
   EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
+  HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
+  DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
   MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
   MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
   ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
@@ -2049,7 +2024,6 @@ function sysinfo() {
   TEXT+="\n\Z4> Arc: ${ARC_VERSION}\Zn"
   TEXT+="\n  Subversion Loader: \ZbAddons ${ADDONSVERSION} | Configs ${CONFIGSVERSION} | Patches ${PATCHESVERSION}\Zn"
   TEXT+="\n  Subversion DSM: \ZbModules ${MODULESVERSION} | LKM ${LKMVERSION}\Zn"
-  TEXT+="\n"
   TEXT+="\n\Z4>> Loader\Zn"
   TEXT+="\n   Config | Build: \Zb${CONFDONE} | ${BUILDDONE}\Zn"
   TEXT+="\n   Config Version: \Zb${CONFIGVER}\Zn"
@@ -2081,6 +2055,7 @@ function sysinfo() {
   # Check for Controller // 104=RAID // 106=SATA // 107=SAS // 100=SCSI // c03=USB
   TEXT+="\n\Z4> Storage\Zn"
   TEXT+="\n  External Controller: \Zb${EXTERNALCONTROLLER}\Zn"
+  TEXT+="\n  Drives | Harddrives: \Zb${DRIVES} | ${HARDDRIVES}\Zn"
   # Get Information for Sata Controller
   NUMPORTS=0
   if [ $(lspci -d ::106 | wc -l) -gt 0 ]; then
@@ -2226,6 +2201,8 @@ function fullsysinfo() {
   HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
   KVMSUPPORT="$(readConfigKey "arc.kvm" "${USER_CONFIG_FILE}")"
   EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
+  HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
+  DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
   MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
   MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
   ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
@@ -2316,6 +2293,7 @@ function fullsysinfo() {
   # Check for Controller // 104=RAID // 106=SATA // 107=SAS // 100=SCSI // c03=USB
   TEXT+="\nStorage"
   TEXT+="\nExternal Controller: ${EXTERNALCONTROLLER}"
+  TEXT+="\nDrives | Harddrives: ${DRIVES} | ${HARDDRIVES}"
   # Get Information for Sata Controller
   NUMPORTS=0
   if [ $(lspci -d ::106 | wc -l) -gt 0 ]; then
@@ -2677,44 +2655,79 @@ function saveMenu() {
 # let user format disks from inside arc
 function formatdisks() {
   rm -f "${TMP_PATH}/opts"
-  while read -r POSITION NAME; do
-    [[ -z "${POSITION}" || -z "${NAME}" ]] && continue
-    echo "${POSITION}" | grep -q "${LOADER_DISK}" && continue
-    echo "\"${POSITION}\" \"${NAME}\" \"off\"" >>"${TMP_PATH}/opts"
-  done < <(ls -l /dev/disk/by-id/ | sed 's|../..|/dev|g' | grep -E "/dev/sd|/dev/mmc|/dev/nvme" | awk -F' ' '{print $NF" "$(NF-2)}' | sort -uk 1,1)
+  while read -r KNAME KMODEL; do
+    [ -z "${KNAME}" ] && continue
+    [[ "${KNAME}" = /dev/md* ]] && continue
+    [ -z "${KMODEL}" ] && KMODEL="${TYPE}"
+    echo "${KNAME}" | grep -q "${LOADER_DISK}" && continue
+    echo "\"${KNAME}\" \"${KMODEL}\" \"off\"" >>"${TMP_PATH}/opts"
+  done < <(lsblk -pno KNAME,MODEL,TYPE)
   if [ ! -f "${TMP_PATH}/opts" ]; then
     dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
-      --msgbox "No Disk found!" 0 0
-    return 1
+      --msgbox "No disk found!" 0 0
+    return
   fi
   dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
-    --checklist "" 0 0 0 --file "${TMP_PATH}/opts" \
-    2>"${TMP_PATH}/resp"
-  [ $? -ne 0 ] && return 1
-  RESP="$(<"${TMP_PATH}/resp")"
-  [ -z "${RESP}" ] && return 1
+    --checklist "Select Disk(s)" 0 0 0 --file "${TMP_PATH}/opts" \
+    2>${TMP_PATH}/resp
+  [ $? -ne 0 ] && return
+  RESP=$(<"${TMP_PATH}/resp")
+  [ -z "${RESP}" ] && return
   dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
     --yesno "Warning:\nThis operation is irreversible. Please backup important data. Do you want to continue?" 0 0
-  [ $? -ne 0 ] && return 1
-  RAID=$(ls /dev/md* | wc -l)
-  if [ ${RAID} -gt 0 ]; then
+  [ $? -ne 0 ] && return
+  if [ $(ls /dev/md* 2>/dev/null | wc -l) -gt 0 ]; then
     dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
-      --yesno "Warning:\nThe current hds is in raid, do you still want to format them?" 0 0
-    [ $? -ne 0 ] && return 1
-    for I in $(ls /dev/md*); do
+      --yesno "Warning:\nThe current HDD are in Raid, do you still want to format them?" 0 0
+    [ $? -ne 0 ] && return
+    for I in $(ls /dev/md* 2>/dev/null); do
       mdadm -S "${I}"
     done
   fi
   (
     for I in ${RESP}; do
-      echo -e ">>> Formatting: ${I}"
-      echo y | mkfs.ext4 -T largefile4 "${I}" &>/dev/null
-      echo -e ">>> Done\n"
+      if [[ "${I}" = /dev/mmc* ]]; then
+        echo y | mkdosfs -F32 "${I}"
+      else
+        echo y | mkfs.ext4 -T largefile4 "${I}"
+      fi
     done
   ) 2>&1 | dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
-    --progressbox "Doing the Magic..." 20 70
+    --progressbox "Formatting ..." 20 100
   dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
     --msgbox "Formatting is complete." 0 0
+}
+
+###############################################################################
+# let user format disks from inside arc
+function forcessh() {
+      dialog --backtitle "$(backtitle)" --colors --title "Force SSH" \
+        --yesno "Please insert all disks before continuing.\n" 0 0
+      [ $? -ne 0 ] && return
+      (
+        ONBOOTUP=""
+        ONBOOTUP="${ONBOOTUP}synowebapi --exec api=SYNO.Core.Terminal method=set version=3 enable_telnet=true enable_ssh=true ssh_port=22 forbid_console=false\n"
+        ONBOOTUP="${ONBOOTUP}echo \"DELETE FROM task WHERE task_name LIKE ''ARCONBOOTUPARC'';\" | sqlite3 /usr/syno/etc/esynoscheduler/esynoscheduler.db\n"
+        mkdir -p "${TMP_PATH}/sdX1"
+        for I in $(ls /dev/sd*1 2>/dev/null | grep -v "${LOADER_DISK_PART1}"); do
+          mount "${I}" "${TMP_PATH}/sdX1"
+          if [ -f "${TMP_PATH}/sdX1/usr/syno/etc/esynoscheduler/esynoscheduler.db" ]; then
+            sqlite3 ${TMP_PATH}/sdX1/usr/syno/etc/esynoscheduler/esynoscheduler.db <<EOF
+DELETE FROM task WHERE task_name LIKE 'ARCONBOOTUPARC';
+INSERT INTO task VALUES('ARCONBOOTUPARC', '', 'bootup', '', 1, 0, 0, 0, '', 0, '$(echo -e ${ONBOOTUP})', 'script', '{}', '', '', '{}', '{}');
+EOF
+            sleep 1
+            sync
+            echo "true" >${TMP_PATH}/isEnable
+          fi
+          umount "${I}"
+        done
+        rm -rf "${TMP_PATH}/sdX1"
+      ) 2>&1 | dialog --backtitle "$(backtitle)" --colors --title "Force SSH" \
+        --progressbox "Enabling ..." 20 100
+      [ "$(cat ${TMP_PATH}/isEnable 2>/dev/null)" = "true" ] && MSG="Telnet&SSH is enabled." || MSG="Telnet&SSH is not enabled."
+      dialog --backtitle "$(backtitle)" --colors --title "Force SSH" \
+        --msgbox "${MSG}" 0 0
 }
 
 ###############################################################################
@@ -2853,6 +2866,7 @@ while true; do
   fi
   echo "= \"\Z4========== Info ==========\Zn \" "                                           >>"${TMP_PATH}/menu"
   echo "a \"Sysinfo \" "                                                                    >>"${TMP_PATH}/menu"
+  echo "A \"Full Sysinfo \" "                                                               >>"${TMP_PATH}/menu"
   echo "= \"\Z4========= System =========\Zn \" "                                           >>"${TMP_PATH}/menu"
   if [ "${CONFDONE}" = "true" ]; then
     if [ "${ARCOPTS}" = "true" ]; then
@@ -2867,13 +2881,8 @@ while true; do
       echo "e \"DSM Version \" "                                                            >>"${TMP_PATH}/menu"
       echo "p \"Arc Patch Settings \" "                                                     >>"${TMP_PATH}/menu"
       echo "N \"Network Config \" "                                                         >>"${TMP_PATH}/menu"
-      if [ "${DT}" = "false" ]; then
-        echo "S \"Update Storage Map \" "                                                   >>"${TMP_PATH}/menu"
-      fi
+      echo "S \"Update Storage Map \" "                                                     >>"${TMP_PATH}/menu"
       echo "U \"USB Mount: \Z4${USBMOUNT}\Zn \" "                                           >>"${TMP_PATH}/menu"
-      if [ "${DT}" = "false" ]; then
-        echo "W \"Force USB Mount \" "                                                      >>"${TMP_PATH}/menu"
-      fi
       echo "P \"Custom StoragePanel \" "                                                    >>"${TMP_PATH}/menu"
       echo "D \"Loader DHCP/StaticIP \" "                                                   >>"${TMP_PATH}/menu"
     fi
@@ -2918,7 +2927,7 @@ while true; do
       fi
       echo "O \"Official Driver Priority: \Z4${ODP}\Zn \" "                                 >>"${TMP_PATH}/menu"
       echo "H \"Sort Drives: \Z4${HDDSORT}\Zn \" "                                          >>"${TMP_PATH}/menu"
-      echo "V \"VMM/KVM Support: \Z4${KVMSUPPORT}\Zn \" "                                   >>"${TMP_PATH}/menu"
+      echo "V \"KVM Support: \Z4${KVMSUPPORT}\Zn \" "                                       >>"${TMP_PATH}/menu"
       echo "c \"IPv6 Support: \Z4${ARCIPV6}\Zn \" "                                         >>"${TMP_PATH}/menu"
       echo "E \"eMMC Boot Support: \Z4${EMMCBOOT}\Zn \" "                                   >>"${TMP_PATH}/menu"
       echo "o \"Switch MacSys: \Z4${MACSYS}\Zn \" "                                         >>"${TMP_PATH}/menu"
@@ -2938,6 +2947,7 @@ while true; do
     echo "J \"DSM force Reinstall \" "                                                      >>"${TMP_PATH}/menu"
     echo "F \"\Z1Format Sata/NVMe Disk\Zn \" "                                              >>"${TMP_PATH}/menu"
     echo "L \"Grep Logs from dbgutils \" "                                                  >>"${TMP_PATH}/menu"
+    echo "T \"Force enable SSH in DSM \" "                                                  >>"${TMP_PATH}/menu"
   fi
   echo "= \"\Z4====== Misc Settings =====\Zn \" "                                           >>"${TMP_PATH}/menu"
   echo "x \"Backup/Restore/Recovery \" "                                                    >>"${TMP_PATH}/menu"
@@ -2956,9 +2966,10 @@ while true; do
     # Main Section
     1) arcMenu; NEXT="2" ;;
     2) make; NEXT="3" ;;
-    3) boot && exit 0 || sleep 3 ;;
+    3) boot && exit 0 ;;
     # Info Section
     a) sysinfo; NEXT="a" ;;
+    A) fullsysinfo; NEXT="A" ;;
     # System Section
     # Arc Section
     4) [ "${ARCOPTS}" = "true" ] && ARCOPTS='false' || ARCOPTS='true'
@@ -2971,17 +2982,18 @@ while true; do
     N) networkMenu; NEXT="N" ;;
     S) storageMenu; NEXT="S" ;;
     p) ONLYPATCH="true" && arcsettings; NEXT="p" ;;
-    U) [ "${USBMOUNT}" = "true" ] && USBMOUNT='false' || USBMOUNT='true'
+    U)
+      if [ "${USBMOUNT}" = "true" ]; then
+        USBMOUNT="false"
+      elif [[ "${USBMOUNT}" = "false" && "${DT}" = "false" ]]; then
+        USBMOUNT="force"
+      elif [[ "${USBMOUNT}" = "force" || "${USBMOUNT}" = "false" ]]; then
+        USBMOUNT="true"
+      fi
       writeConfigKey "arc.usbmount" "${USBMOUNT}" "${USER_CONFIG_FILE}"
       writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
       BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
       NEXT="U"
-      ;;
-    W) USBMOUNT='force'
-      writeConfigKey "arc.usbmount" "force" "${USER_CONFIG_FILE}"
-      writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
-      BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-      NEXT="W"
       ;;
     P) storagepanelMenu; NEXT="P" ;;
     D) staticIPMenu; NEXT="D" ;;
@@ -3112,6 +3124,7 @@ while true; do
     J) juniorboot; NEXT="J" ;;
     F) formatdisks; NEXT="F" ;;
     L) greplogs; NEXT="L" ;;
+    T) forcessh; NEXT="T" ;;
     # Loader Settings
     x) backupMenu; NEXT="x" ;;
     9) [ "${OFFLINE}" = "true" ] && OFFLINE='false' || OFFLINE='true'
