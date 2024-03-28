@@ -1209,7 +1209,6 @@ function sysinfo() {
   [ -d /sys/firmware/efi ] && BOOTSYS="UEFI" || BOOTSYS="Legacy"
   # Get System Informations
   CPU="$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))"
-  RAM="$(free -m 2>/dev/null | grep -i mem | awk '{print $2}') MB"
   VENDOR="$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')"
   ETHX=$(ls /sys/class/net/ | grep eth) || true
   NIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
@@ -1261,7 +1260,7 @@ function sysinfo() {
   for ETH in ${ETHX}; do
     IP=""
     STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
-    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
+    DRIVER="$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
     MAC="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
     MACR="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
     COUNT=0
@@ -1274,7 +1273,7 @@ function sysinfo() {
         MSG="DHCP"
       fi
       if [ -n "${IP}" ]; then
-        SPEED=$(ethtool ${ETH} | grep "Speed:" | awk '{print $2}')
+        SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}) \ZbIP: ${IP} | Mac: ${MACR} (${MAC})\Zn"
         break
       fi
@@ -1283,7 +1282,7 @@ function sysinfo() {
         break
       fi
       sleep 3
-      if ethtool ${ETH} | grep 'Link detected' | grep -q 'no'; then
+      if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
         TEXT+="\n  ${DRIVER} \ZbIP: NOT CONNECTED | MAC: ${MACR} (${MAC})\Zn"
         break
       fi
@@ -1439,7 +1438,6 @@ function fullsysinfo() {
   [ -d /sys/firmware/efi ] && BOOTSYS="UEFI" || BOOTSYS="Legacy"
   # Get System Informations
   CPU="$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))"
-  RAM="$(free -m 2>/dev/null | grep -i mem | awk '{print $2}') MB"
   VENDOR="$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')"
   ETHX=$(ls /sys/class/net/ | grep -v lo || true)
   NIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
@@ -1491,7 +1489,7 @@ function fullsysinfo() {
   for ETH in ${ETHX}; do
     IP=""
     STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
-    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
+    DRIVER="$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
     MAC="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
     MACR="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
     COUNT=0
@@ -1504,7 +1502,7 @@ function fullsysinfo() {
         MSG="DHCP"
       fi
       if [ -n "${IP}" ]; then
-        SPEED=$(ethtool ${ETH} | grep "Speed:" | awk '{print $2}')
+        SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         TEXT+="\n${DRIVER} (${SPEED} | ${MSG}) IP: ${IP} | Mac: ${MACR} (${MAC})"
         break
       fi
@@ -1513,7 +1511,7 @@ function fullsysinfo() {
         break
       fi
       sleep 3
-      if ethtool ${ETH} | grep 'Link detected' | grep -q 'no'; then
+      if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
         TEXT+="\n${DRIVER} IP: NOT CONNECTED | MAC: ${MACR} (${MAC})"
         break
       fi
