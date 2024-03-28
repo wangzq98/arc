@@ -1,6 +1,6 @@
 # Get Network Config for Loader
 function getnet() {
-  ETHX=$(ls /sys/class/net/ | grep eth) || true
+  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   if [ "${ARCPATCH}" = "true" ]; then
     ARCMACNUM=1
@@ -34,45 +34,27 @@ function getnet() {
       dialog --backtitle "$(backtitle)" --title "Mac Setting" --msgbox "Invalid MAC" 0 0
     done
   fi
-  if [ "${ARCPATCH}" = "true" ]; then
-    # Ask for Macsys
-    dialog --clear --backtitle "$(backtitle)" \
-      --nocancel --title "Macsys Setting" \
-      --menu "Choose an Option\n* Recommended Option" 10 50 0 \
-      1 "Hardware - Use Hardware Mac for DSM *" \
-      2 "Custom - Use Custom Mac for DSM" \
-    2>"${TMP_PATH}/resp"
-    resp="$(<"${TMP_PATH}/resp")"
-    [ -z "${resp}" ] && return 1
-    if [ ${resp} -eq 1 ]; then
-      writeConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
-    elif [ ${resp} -eq 2 ]; then
-      writeConfigKey "arc.macsys" "custom" "${USER_CONFIG_FILE}"
-    fi
-  else
-    # Ask for Macsys
-    dialog --clear --backtitle "$(backtitle)" \
-      --nocancel --title "Macsys Setting" \
-      --menu "Choose an Option\n* Recommended Option" 5 50 0 \
-      1 "Hardware - Use Hardware Mac for DSM *" \
-      2 "Custom - Use Custom Mac for DSM" \
-    2>"${TMP_PATH}/resp"
-    resp="$(<"${TMP_PATH}/resp")"
-    [ -z "${resp}" ] && return 1
-    if [ ${resp} -eq 1 ]; then
-      writeConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
-    elif [ ${resp} -eq 2 ]; then
-      writeConfigKey "arc.macsys" "custom" "${USER_CONFIG_FILE}"
-    fi
+  # Ask for Macsys
+  dialog --clear --backtitle "$(backtitle)" \
+    --nocancel --title "Macsys Setting" \
+    --menu "Choose an Option\n* Recommended Option" 8 50 0 \
+    1 "Hardware - Use Hardware Mac for DSM *" \
+    2 "Custom - Use Custom/Fake Mac for DSM" \
+  2>"${TMP_PATH}/resp"
+  resp="$(<"${TMP_PATH}/resp")"
+  [ -z "${resp}" ] && return 1
+  if [ ${resp} -eq 1 ]; then
+    writeConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
+  elif [ ${resp} -eq 2 ]; then
+    writeConfigKey "arc.macsys" "custom" "${USER_CONFIG_FILE}"
   fi
   MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
 }
 
 # Get Amount of NIC
-ETHX=$(ls /sys/class/net/ | grep eth) || true
+ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
 # Get actual IP
 for ETH in ${ETHX}; do
-  IPCON="$(readConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}")"
-  [ -z "${IPCON}" ] && IPCON="$(getIP ${ETH})"
+  IPCON="$(getIP ${ETH})"
   [ -n "${IPCON}" ] && break
 done
