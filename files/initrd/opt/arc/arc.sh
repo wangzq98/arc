@@ -504,10 +504,10 @@ function arcSummary() {
   [ -n "${PORTMAP}" ] && SUMMARY+="\n>> Portmap: \Zb${PORTMAP}\Zn"
   [ -n "${DISKMAP}" ] && SUMMARY+="\n>> Diskmap: \Zb${DISKMAP}\Zn"
   SUMMARY+="\n>> USB Mount: \Zb${USBMOUNT}\Zn"
+  SUMMARY+="\n>> Sort Drives: \Zb${HDDSORT}\Zn"
   SUMMARY+="\n>> IPv6: \Zb${ARCIPV6}\Zn"
   SUMMARY+="\n>> KVM Support: \Zb${KVMSUPPORT}\Zn"
   SUMMARY+="\n>> Offline Mode: \Zb${OFFLINE}\Zn"
-  SUMMARY+="\n>> Sort Drives: \Zb${HDDSORT}\Zn"
   SUMMARY+="\n>> Directboot: \Zb${DIRECTBOOT}\Zn"
   SUMMARY+="\n>> eMMC Boot: \Zb${EMMCBOOT}\Zn"
   SUMMARY+="\n>> Kernelload: \Zb${KERNELLOAD}\Zn"
@@ -570,8 +570,8 @@ function make() {
     PAT_URL_CONF="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
     PAT_HASH_CONF="$(readConfigKey "arc.pathash" "${USER_CONFIG_FILE}")"
     if [[ -z "${PAT_URL_CONF}" || -z "${PAT_HASH_CONF}" ]]; then
-      PAT_URL_CONF=""
-      PAT_HASH_CONF=""
+      PAT_URL_CONF="#"
+      PAT_HASH_CONF="#"
     fi
     # Get PAT Data from Syno
     while true; do
@@ -726,8 +726,8 @@ function offlinemake() {
     return 1
   else
     # Remove PAT Data for Offline
-    PAT_URL=""
-    PAT_HASH=""
+    PAT_URL="#"
+    PAT_HASH="#"
     writeConfigKey "arc.paturl" "${PAT_URL}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.pathash" "${PAT_HASH}" "${USER_CONFIG_FILE}"
     # Extract Files
@@ -871,6 +871,8 @@ while true; do
       echo "j \"Cmdline \" "                                                                >>"${TMP_PATH}/menu"
       echo "k \"Synoinfo \" "                                                               >>"${TMP_PATH}/menu"
       echo "l \"Edit User Config \" "                                                       >>"${TMP_PATH}/menu"
+      echo "w \"Reset Loader \" "                                                           >>"${TMP_PATH}/menu"
+      echo "J \"DSM force Reinstall \" "                                                    >>"${TMP_PATH}/menu"
     fi
     if [ "${BOOTOPTS}" = "true" ]; then
       echo "6 \"\Z1Hide Boot Options\Zn \" "                                                >>"${TMP_PATH}/menu"
@@ -902,7 +904,9 @@ while true; do
       fi
       echo "O \"Official Driver Priority: \Z4${ODP}\Zn \" "                                 >>"${TMP_PATH}/menu"
       echo "H \"Sort Drives: \Z4${HDDSORT}\Zn \" "                                          >>"${TMP_PATH}/menu"
-      echo "U \"USB Mount: \Z4${USBMOUNT}\Zn \" "                                           >>"${TMP_PATH}/menu"
+      if [ "${DT}" = "false" ]; then
+        echo "U \"USB Mount: \Z4${USBMOUNT}\Zn \" "                                         >>"${TMP_PATH}/menu"
+      fi
       echo "V \"KVM Support: \Z4${KVMSUPPORT}\Zn \" "                                       >>"${TMP_PATH}/menu"
       echo "c \"IPv6 Support: \Z4${ARCIPV6}\Zn \" "                                         >>"${TMP_PATH}/menu"
       echo "E \"eMMC Boot Support: \Z4${EMMCBOOT}\Zn \" "                                   >>"${TMP_PATH}/menu"
@@ -919,12 +923,11 @@ while true; do
     echo "= \"\Z4========== Dev ===========\Zn \" "                                         >>"${TMP_PATH}/menu"
     echo "v \"Save Modifications to Disk \" "                                               >>"${TMP_PATH}/menu"
     echo "n \"Edit Grub Config \" "                                                         >>"${TMP_PATH}/menu"
-    echo "w \"Reset Loader \" "                                                             >>"${TMP_PATH}/menu"
-    echo "J \"DSM force Reinstall \" "                                                      >>"${TMP_PATH}/menu"
     echo "L \"Grep Logs from dbgutils \" "                                                  >>"${TMP_PATH}/menu"
     echo "T \"Force enable SSH in DSM \" "                                                  >>"${TMP_PATH}/menu"
     echo "C \"Clone Loaderdisk \" "                                                         >>"${TMP_PATH}/menu"
     echo "F \"\Z1Format Sata/NVMe Disk\Zn \" "                                              >>"${TMP_PATH}/menu"
+    echo "G \"Install opkg Package Manager \" "                                             >>"${TMP_PATH}/menu"
   fi
   echo "= \"\Z4====== Misc Settings =====\Zn \" "                                           >>"${TMP_PATH}/menu"
   echo "x \"Backup/Restore/Recovery \" "                                                    >>"${TMP_PATH}/menu"
@@ -969,6 +972,8 @@ while true; do
     j) cmdlineMenu; NEXT="j" ;;
     k) synoinfoMenu; NEXT="k" ;;
     l) editUserConfig; NEXT="l" ;;
+    w) resetLoader; NEXT="w" ;;
+    J) juniorboot; NEXT="J" ;;
     # Boot Section
     6) [ "${BOOTOPTS}" = "true" ] && BOOTOPTS='false' || BOOTOPTS='true'
       ARCOPTS="${BOOTOPTS}"
@@ -1097,12 +1102,11 @@ while true; do
       ;;
     v) saveMenu; NEXT="v" ;;
     n) editGrubCfg; NEXT="n" ;;
-    w) resetLoader; NEXT="w" ;;
-    J) juniorboot; NEXT="J" ;;
     L) greplogs; NEXT="L" ;;
     T) forcessh; NEXT="T" ;;
     C) cloneLoader; NEXT="C" ;;
     F) formatdisks; NEXT="F" ;;
+    G) package; NEXT="G" ;;
     # Loader Settings
     x) backupMenu; NEXT="x" ;;
     9) [ "${OFFLINE}" = "true" ] && OFFLINE='false' || OFFLINE='true'
