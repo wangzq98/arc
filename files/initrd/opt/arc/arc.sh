@@ -121,7 +121,6 @@ function arcModel() {
       Y="$(readModelKey "${M}" "disks")"
       echo "${M} ${Y}" >>"${TMP_PATH}/modellist"
     done <<<$(find "${MODEL_CONFIG_PATH}" -maxdepth 1 -name \*.yml | sed 's/.*\///; s/\.yml//')
-
     while true; do
       echo -n "" >"${TMP_PATH}/menu"
       while read -r M Y; do
@@ -131,16 +130,12 @@ function arcModel() {
         [[ "${BETA}" = "true" && ${FLGBETA} -eq 0 ]] && continue
         DISKS="$(readModelKey "${M}" "disks")-Bay"
         ARCCONF="$(readModelKey "${M}" "arc.serial")"
-        if [ -n "${ARCCONF}" ]; then
-          ARCAV="Arc"
-        else
-          ARCAV="NonArc"
-        fi
-        if [[ "${PLATFORM}" = "r1000" || "${PLATFORM}" = "v1000" || "${PLATFORM}" = "epyc7002" ]]; then
-          CPU="AMD"
-        else
-          CPU="Intel"
-        fi
+        [ -n "${ARCCONF}" ] && ARC="x" || ARC=""
+        [[ "${PLATFORM}" = "r1000" || "${PLATFORM}" = "v1000" || "${PLATFORM}" = "epyc7002" ]] && CPU="AMD" || CPU="Intel"
+        [[ "${PLATFORM}" = "apollolake" || "${PLATFORM}" = "geminilake" || "${PLATFORM}" = "epyc7002" ]] && IGPUS="x" || IGPUS=""
+        [[ ! "${DT}" = "true" || "${PLATFORM}" = "epyc7002" ]] && HBAS="x" || HBAS=""
+        [[ "${M}" = "DS918+" || "${M}" = "DS1019+" || "${M}" = "DS1621xs+" || "${M}" = "RS1619xs+" ]] && M_2_CACHE="" || M_2_CACHE="x"
+        [ "${DT}" = "true" ] && M_2_STORAGE="x" || M_2_STORAGE=""
         # Check id model is compatible with CPU
         COMPATIBLE=1
         if [ ${RESTRICT} -eq 1 ]; then
@@ -157,19 +152,19 @@ function arcModel() {
             COMPATIBLE=0
           fi
         fi
-        [ "${DT}" = "true" ] && DTO="DT" || DTO=""
-        [ "${BETA}" = "true" ] && BETA="Beta" || BETA=""
-        [ ${COMPATIBLE} -eq 1 ] && echo "${M} \"$(printf "\Zb%-7s\Zn \Zb%-6s\Zn \Zb%-13s\Zn \Zb%-3s\Zn \Zb%-7s\Zn \Zb%-4s\Zn" "${DISKS}" "${CPU}" "${PLATFORM}" "${DTO}" "${ARCAV}" "${BETA}")\" ">>"${TMP_PATH}/menu"
+        [ "${DT}" = "true" ] && DTS="x" || DTS=""
+        [ "${BETA}" = "true" ] && BETA="x" || BETA=""
+        [ ${COMPATIBLE} -eq 1 ] && echo "${M} \"$(printf "\Zb%-8s\Zn \Zb%-8s\Zn \Zb%-15s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-10s\Zn \Zb%-12s\Zn \Zb%-4s\Zn" "${DISKS}" "${CPU}" "${PLATFORM}" "${DTS}" "${ARC}" "${IGPUS}" "${HBAS}" "${M_2_CACHE}" "${M_2_STORAGE}" "${BETA}")\" ">>"${TMP_PATH}/menu"
       done <<<$(cat "${TMP_PATH}/modellist" | sort -n -k 2)
       dialog --backtitle "$(backtitle)" --colors \
         --cancel-label "Show all" --help-button --help-label "Exit" \
         --extra-button --extra-label "Info" \
-        --menu "Choose Model for Loader" 0 70 0 \
+        --menu "Choose Model for Loader (This Chart indicates the original Values, without Addons.)\n $(printf "\Zb%-10s\Zn \Zb%-8s\Zn \Zb%-8s\Zn \Zb%-15s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-10s\Zn \Zb%-12s\Zn \Zb%-4s\Zn" "Model" "Disks" "CPU" "Platform" "DT" "Arc" "iGPU" "HBA" "M.2 Cache" "M.2 Volume" "Beta")" 0 105 0 \
         --file "${TMP_PATH}/menu" 2>"${TMP_PATH}/resp"
       RET=$?
       case ${RET} in
       0) # ok-button
-        resp="$(<"${TMP_PATH}/resp")"
+        resp=$(cat ${TMP_PATH}/resp)
         [ -z "${resp}" ] && return 1
         break
         ;;
@@ -178,11 +173,11 @@ function arcModel() {
         RESTRICT=0
         ;;
       2) # help-button -> Exit
-        return 1
+        return 0
         break
         ;;
       3) # extra-button -> Platform Info
-        resp="$(<"${TMP_PATH}/resp")"
+        resp=$(cat ${TMP_PATH}/resp)
         PLATFORM="$(readModelKey "${resp}" "platform")"
         dialog --textbox "./informations/${PLATFORM}.yml" 15 80
         ;;
@@ -229,15 +224,10 @@ function arcVersion() {
   if [ "${ARCRECOVERY}" != "true" ]; then
     # Select Build for DSM
     ITEMS="$(readConfigEntriesArray "productvers" "${MODEL_CONFIG_PATH}/${MODEL}.yml" | sort -r)"
-    if [ -z "${1}" ]; then
-      dialog --clear --no-items --nocancel --backtitle "$(backtitle)" \
-        --menu "Choose a Version" 7 30 0 ${ITEMS} 2>"${TMP_PATH}/resp"
-      resp="$(<"${TMP_PATH}/resp")"
-      [ -z "${resp}" ] && return 1
-    else
-      if ! arrayExistItem "${1}" ${ITEMS}; then return; fi
-      resp="${1}"
-    fi
+    dialog --clear --no-items --nocancel --backtitle "$(backtitle)" \
+      --menu "Choose a Version" 7 30 0 ${ITEMS} 2>"${TMP_PATH}/resp"
+    resp=$(cat ${TMP_PATH}/resp)
+    [ -z "${resp}" ] && return 1
     if [ "${PRODUCTVER}" != "${resp}" ]; then
       PRODUCTVER="${resp}"
       writeConfigKey "productver" "${PRODUCTVER}" "${USER_CONFIG_FILE}"
@@ -288,7 +278,7 @@ function arcPatch() {
       2 "No - Install with random Serial/Mac" \
       3 "No - Install with my Serial/Mac" \
     2>"${TMP_PATH}/resp"
-    resp="$(<"${TMP_PATH}/resp")"
+    resp=$(cat ${TMP_PATH}/resp)
     [ -z "${resp}" ] && return 1
     if [ ${resp} -eq 1 ]; then
       # Read Arc Patch from File
@@ -326,7 +316,7 @@ function arcPatch() {
       1 "Install with random Serial/Mac" \
       2 "Install with my Serial/Mac" \
     2>"${TMP_PATH}/resp"
-    resp="$(<"${TMP_PATH}/resp")"
+    resp=$(cat ${TMP_PATH}/resp)
     [ -z "${resp}" ] && return 1
     if [ ${resp} -eq 1 ]; then
       # Generate random Serial
@@ -411,7 +401,7 @@ function arcSettings() {
     1 "Yes - Build Arc Loader now" \
     2 "No - I want to make changes" \
   2>"${TMP_PATH}/resp"
-  resp="$(<"${TMP_PATH}/resp")"
+  resp=$(cat ${TMP_PATH}/resp)
   [ -z "${resp}" ] && return 1
   if [ ${resp} -eq 1 ]; then
     premake
@@ -704,7 +694,7 @@ function make() {
         1 "Yes - Boot Arc Loader now" \
         2 "No - I want to make changes" \
       2>"${TMP_PATH}/resp"
-      resp="$(<"${TMP_PATH}/resp")"
+      resp=$(cat ${TMP_PATH}/resp)
       [ -z "${resp}" ] && return 1
       if [ ${resp} -eq 1 ]; then
         boot && exit 0
@@ -791,7 +781,7 @@ function offlinemake() {
       1 "Yes - Boot Arc Loader now" \
       2 "No - I want to make changes" \
     2>"${TMP_PATH}/resp"
-    resp="$(<"${TMP_PATH}/resp")"
+    resp=$(cat ${TMP_PATH}/resp)
     [ -z "${resp}" ] && return 1
     if [ ${resp} -eq 1 ]; then
       boot && exit 0
@@ -948,7 +938,7 @@ while true; do
     --cancel-label "Exit" --title "Arc Menu" --menu "" 0 0 0 --file "${TMP_PATH}/menu" \
     2>"${TMP_PATH}/resp"
   [ $? -ne 0 ] && break
-  case $(<"${TMP_PATH}/resp") in
+  case "$(cat ${TMP_PATH}/resp)" in
     # Main Section
     1) arcModel; NEXT="2" ;;
     2) premake; NEXT="3" ;;
