@@ -64,7 +64,6 @@ KERNELLOAD="$(readConfigKey "arc.kernelload" "${USER_CONFIG_FILE}")"
 KERNELPANIC="$(readConfigKey "arc.kernelpanic" "${USER_CONFIG_FILE}")"
 MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
 ODP="$(readConfigKey "arc.odp" "${USER_CONFIG_FILE}")"
-MODULESCOPY="$(readConfigKey "arc.modulescopy" "${USER_CONFIG_FILE}")"
 HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 KERNEL="$(readConfigKey "arc.kernel" "${USER_CONFIG_FILE}")"
 USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
@@ -72,6 +71,10 @@ ARCIPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
 EMMCBOOT="$(readConfigKey "arc.emmcboot" "${USER_CONFIG_FILE}")"
 OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
 EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
+SATACONTROLLER="$(readConfigKey "device.satacontroller" "${USER_CONFIG_FILE}")"
+SCSICONTROLLER="$(readConfigKey "device.sciscontroller" "${USER_CONFIG_FILE}")"
+RAIDCONTROLLER="$(readConfigKey "device.raidcontroller" "${USER_CONFIG_FILE}")"
+SASCONTROLLER="$(readConfigKey "device.sascontroller" "${USER_CONFIG_FILE}")"
 CUSTOM="$(readConfigKey "arc.custom" "${USER_CONFIG_FILE}")"
 
 # Get Config/Build Status
@@ -137,7 +140,7 @@ function arcModel() {
         [ -n "${ARCCONF}" ] && ARC="x" || ARC=""
         [[ "${PLATFORM}" = "r1000" || "${PLATFORM}" = "v1000" || "${PLATFORM}" = "epyc7002" ]] && CPU="AMD" || CPU="Intel"
         [[ "${PLATFORM}" = "apollolake" || "${PLATFORM}" = "geminilake" || "${PLATFORM}" = "epyc7002" ]] && IGPUS="x" || IGPUS=""
-        [[ ! "${DT}" = "true" || "${PLATFORM}" = "epyc7002" ]] && HBAS="x" || HBAS=""
+        [[ "${DT}" = "true" || "${DT}" = "false" ]] && HBAS="x" || HBAS=""
         [[ "${M}" = "DS220+" ||  "${M}" = "DS224+" || "${M}" = "DS918+" || "${M}" = "DS1019+" || "${M}" = "DS1621xs+" || "${M}" = "RS1619xs+" ]] && M_2_CACHE="" || M_2_CACHE="x"
         [[ "${DT}" = "true" && "${M}" != "DS220+" && "${M}" != "DS224+" ]] && M_2_STORAGE="x" || M_2_STORAGE=""
         # Check id model is compatible with CPU
@@ -149,7 +152,7 @@ function arcModel() {
               break
             fi
           done
-          if [ "${DT}" = "true" ] && [ "${EXTERNALCONTROLLER}" = "true" ]; then
+          if [ "${DT}" = "true" ] && [[ ${SCSICONTROLLER} -gt 0 || ${RAIDCONTROLLER} -gt 0 ]]; then
             COMPATIBLE=0
           fi
           if [[ ${SATACONTROLLER} -eq 0 && "${EXTERNALCONTROLLER}" = "false" && "${M}" != "SA6400" ]]; then
@@ -364,7 +367,7 @@ function arcSettings() {
   dialog --backtitle "$(backtitle)" --colors --title "Network Config" \
     --infobox "Network Config..." 3 30
   getnet
-  # Select Portmap for Loader (nonDT)
+  # Select Portmap for Loader
   getmap
   if [[ "${DT}" = "false" && $(lspci -d ::106 | wc -l) -gt 0 ]]; then
     dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
@@ -431,6 +434,16 @@ function premake() {
   # Memory: Set mem_max_mb to the amount of installed memory to bypass Limitation
   writeConfigKey "synoinfo.mem_max_mb" "${RAMMAX}" "${USER_CONFIG_FILE}"
   writeConfigKey "synoinfo.mem_min_mb" "${RAMMIN}" "${USER_CONFIG_FILE}"
+  # Disks Mount Option
+  if [ "${USBMOUNT}" = "internal" ]; then
+    MAXDISKS="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
+    writeConfigKey "synoinfo.maxdisks" "${MAXDISKS}" "${USER_CONFIG_FILE}"
+  elif [ "${USBMOUNT}" = "external" ]; then
+    MAXDISKS="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
+     writeConfigKey "synoinfo.maxdisks" "${MAXDISKS}" "${USER_CONFIG_FILE}"
+  else
+    deleteConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}"
+  fi
   # eMMC Boot Support
   if [ "${EMMCBOOT}" = "true" ]; then
     writeConfigKey "modules.mmc_block" "" "${USER_CONFIG_FILE}"
@@ -438,12 +451,6 @@ function premake() {
   else
     deleteConfigKey "modules.mmc_block" "${USER_CONFIG_FILE}"
     deleteConfigKey "modules.mmc_core" "${USER_CONFIG_FILE}"
-  fi
-  # Fixes for SA6400
-  if [ "${PLATFORM}" = "epyc7002" ]; then
-    KVER="${PRODUCTVER}-${KVER}"
-    MODULESCOPY="false"
-    writeConfigKey "arc.modulescopy" "${MODULESCOPY}" "${USER_CONFIG_FILE}"
   fi
   # Show Config Summary
   arcSummary
@@ -494,7 +501,7 @@ function arcSummary() {
   SUMMARY+="\n>> MacSys: \Zb${MACSYS}\Zn"
   [ -n "${PORTMAP}" ] && SUMMARY+="\n>> Portmap: \Zb${PORTMAP}\Zn"
   [ -n "${DISKMAP}" ] && SUMMARY+="\n>> Diskmap: \Zb${DISKMAP}\Zn"
-  SUMMARY+="\n>> USB Mount: \Zb${USBMOUNT}\Zn"
+  SUMMARY+="\n>> Mount as Disks: \Zb${USBMOUNT}\Zn"
   SUMMARY+="\n>> Sort Drives: \Zb${HDDSORT}\Zn"
   SUMMARY+="\n>> IPv6: \Zb${ARCIPV6}\Zn"
   SUMMARY+="\n>> Offline Mode: \Zb${OFFLINE}\Zn"
@@ -568,7 +575,7 @@ function make() {
       dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
         --infobox "Get PAT Data from Syno..." 3 30
       idx=0
-      while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
+      while [ ${idx} -le 5 ]; do # Loop 5 times, if successful, break
         PAT_URL="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
         PAT_HASH="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].checksum')"
         PAT_URL=${PAT_URL%%\?*}
@@ -894,7 +901,7 @@ function autoarcSettings() {
   dialog --backtitle "$(backtitle)" --colors --title "Network Config" \
     --infobox "Network Config..." 3 30
   autogetnet
-  # Select Portmap for Loader (nonDT)
+  # Select Portmap for Loader
   getmap
   if [[ "${DT}" = "false" && $(lspci -d ::106 | wc -l) -gt 0 ]]; then
     dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
@@ -923,17 +930,15 @@ function autopremake() {
   # Memory: Set mem_max_mb to the amount of installed memory to bypass Limitation
   writeConfigKey "synoinfo.mem_max_mb" "${RAMMAX}" "${USER_CONFIG_FILE}"
   writeConfigKey "synoinfo.mem_min_mb" "${RAMMIN}" "${USER_CONFIG_FILE}"
-  # KVM Support
-  if [ "${KVMSUPPORT}" = "true" ]; then
-    writeConfigKey "modules.kvm_intel" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "modules.kvm_amd" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "modules.kvm" "" "${USER_CONFIG_FILE}"
-    writeConfigKey "modules.irgbypass" "" "${USER_CONFIG_FILE}"
+    # Disks Mount Option
+  if [ "${USBMOUNT}" = "internal" ]; then
+    MAXDISKS="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
+    writeConfigKey "synoinfo.maxdisks" "${MAXDISKS}" "${USER_CONFIG_FILE}"
+  elif [ "${USBMOUNT}" = "external" ]; then
+    MAXDISKS="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
+     writeConfigKey "synoinfo.maxdisks" "${MAXDISKS}" "${USER_CONFIG_FILE}"
   else
-    deleteConfigKey "modules.kvm_intel" "${USER_CONFIG_FILE}"
-    deleteConfigKey "modules.kvm_amd" "${USER_CONFIG_FILE}"
-    deleteConfigKey "modules.kvm" "${USER_CONFIG_FILE}"
-    deleteConfigKey "modules.irgbypass" "${USER_CONFIG_FILE}"
+    deleteConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}"
   fi
   # eMMC Boot Support
   if [ "${EMMCBOOT}" = "true" ]; then
@@ -942,12 +947,6 @@ function autopremake() {
   else
     deleteConfigKey "modules.mmc_block" "${USER_CONFIG_FILE}"
     deleteConfigKey "modules.mmc_core" "${USER_CONFIG_FILE}"
-  fi
-  # Fixes for SA6400
-  if [ "${PLATFORM}" = "epyc7002" ]; then
-    KVER="${PRODUCTVER}-${KVER}"
-    MODULESCOPY="false"
-    writeConfigKey "arc.modulescopy" "${MODULESCOPY}" "${USER_CONFIG_FILE}"
   fi
   # Build Loader
   automake
@@ -983,7 +982,7 @@ function automake() {
     --infobox "Get PAT Data from Syno..." 3 30
   # Get PAT Data from Syno
   idx=0
-  while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
+  while [ ${idx} -le 5 ]; do # Loop 5 times, if successful, break
     PAT_URL="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
     PAT_HASH="$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].checksum')"
     PAT_URL=${PAT_URL%%\?*}
@@ -1171,12 +1170,11 @@ else
         if [ "${MODEL}" = "SA6400" ]; then
           echo "K \"Kernel: \Z4${KERNEL}\Zn \" "                                              >>"${TMP_PATH}/menu"
         fi
-        if [ ! "${MODEL}" = "SA6400" ]; then
-          echo "M \"Copy Modules to DSM: \Z4${MODULESCOPY}\Zn \" "                            >>"${TMP_PATH}/menu"
-        fi
         echo "O \"Official Driver Priority: \Z4${ODP}\Zn \" "                                 >>"${TMP_PATH}/menu"
-        echo "H \"Sort Drives: \Z4${HDDSORT}\Zn \" "                                          >>"${TMP_PATH}/menu"
-        echo "U \"USB Mount: \Z4${USBMOUNT}\Zn \" "                                           >>"${TMP_PATH}/menu"
+        if [ "${DT}" = "true" ]; then
+          echo "H \"Sort Drives: \Z4${HDDSORT}\Zn \" "                                        >>"${TMP_PATH}/menu"
+        fi
+        echo "U \"Mount as Drives: \Z4${USBMOUNT}\Zn \" "                                     >>"${TMP_PATH}/menu"
         echo "c \"IPv6 Support: \Z4${ARCIPV6}\Zn \" "                                         >>"${TMP_PATH}/menu"
         echo "E \"eMMC Boot Support: \Z4${EMMCBOOT}\Zn \" "                                   >>"${TMP_PATH}/menu"
         echo "o \"Switch MacSys: \Z4${MACSYS}\Zn \" "                                         >>"${TMP_PATH}/menu"
@@ -1282,10 +1280,6 @@ else
           ODP="false"
           writeConfigKey "arc.odp" "${ODP}" "${USER_CONFIG_FILE}"
         fi
-        if [ "${MODULESCOPY}" = "true" ]; then
-          MODULESCOPY="false"
-          writeConfigKey "arc.modulescopy" "${MODULESCOPY}" "${USER_CONFIG_FILE}"
-        fi
         PLATFORM="$(readModelKey "${MODEL}" "platform")"
         PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
         KVER="$(readModelKey "${MODEL}" "productvers.[${PRODUCTVER}].kver")"
@@ -1308,12 +1302,6 @@ else
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         NEXT="O"
         ;;
-      M) [ "${MODULESCOPY}" = "false" ] && MODULESCOPY='true' || MODULESCOPY='false'
-        writeConfigKey "arc.modulescopy" "${MODULESCOPY}" "${USER_CONFIG_FILE}"
-        writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
-        BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-        NEXT="M"
-        ;;
       H) [ "${HDDSORT}" = "true" ] && HDDSORT='false' || HDDSORT='true'
         writeConfigKey "arc.hddsort" "${HDDSORT}" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
@@ -1321,13 +1309,9 @@ else
         NEXT="H"
         ;;
       U)
-        if [ "${USBMOUNT}" = "true" ]; then
-          USBMOUNT="false"
-        elif [[ "${USBMOUNT}" = "false" && "${DT}" = "false" ]]; then
-          USBMOUNT="force"
-        elif [[ "${USBMOUNT}" = "force" || "${USBMOUNT}" = "false" ]]; then
-          USBMOUNT="true"
-        fi
+        [ "${USBMOUNT}" = "automated" ] && USBMOUNT="internal" ||
+        [ "${USBMOUNT}" = "internal" ] && USBMOUNT="external" || 
+        [ "${USBMOUNT}" = "external" ] && USBMOUNT="automated"
         writeConfigKey "arc.usbmount" "${USBMOUNT}" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"

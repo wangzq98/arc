@@ -187,73 +187,14 @@ function _set_conf_kv() {
 }
 
 ###############################################################################
-# get bus of disk
-# 1 - device path
-function getBus() {
-  BUS=""
-  # usb/ata(sata/ide)/scsi
-  [ -z "${BUS}" ] && BUS=$(udevadm info --query property --name "${1}" 2>/dev/null | grep ID_BUS | cut -d= -f2 | sed 's/ata/sata/')
-  # usb/sata(sata/ide)/nvme
-  [ -z "${BUS}" ] && BUS=$(lsblk -dpno KNAME,TRAN 2>/dev/null | grep "${1} " | awk '{print $2}')
-  # usb/scsi(sata/ide)/virtio(scsi/virtio)/mmc/nvme
-  [ -z "${BUS}" ] && BUS=$(lsblk -dpno KNAME,SUBSYSTEMS 2>/dev/null | grep "${1} " | awk -F':' '{print $(NF-1)}' | sed 's/_host//')
-  echo "${BUS}"
-  return 0
-}
-
-###############################################################################
-# get IP
-# 1 - ethN
-function getIP() {
-  IP=""
-  if [[ -n "${1}" && -d "/sys/class/net/${1}" ]]; then
-    IP=$(ip route show dev ${1} 2>/dev/null | sed -n 's/.* via .* src \(.*\)  metric .*/\1/p')
-    [ -z "${IP}" ] && IP=$(ip addr show ${1} | grep -E "inet .* eth" | awk '{print $2}' | cut -f1 -d'/' | head -1)
-  else
-    IP=$(ip route show 2>/dev/null | sed -n 's/.* via .* src \(.*\)  metric .*/\1/p' | head -1)
-    [ -z "${IP}" ] && IP=$(ip addr show | grep -E "inet .* eth" | awk '{print $2}' | cut -f1 -d'/' | head -1)
-  fi
-  echo "${IP}"
-  return 0
-}
-
-###############################################################################
-# Find and mount the DSM root filesystem
-# (based on pocopico's TCRP code)
-function findAndMountDSMRoot() {
-  [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -gt 0 ] && return 0
-  dsmrootdisk="$(blkid | grep -i linux_raid_member | grep -E "/dev/.*1:" | head -1 | awk -F ":" '{print $1}')"
-  [ -z "${dsmrootdisk}" ] && return 1
-  [ ! -d "${TMP_PATH}/mdX" ] && mkdir -p "${TMP_PATH}/mdX"
-  [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -eq 0 ] && mount -t ext4 "${dsmrootdisk}" "${TMP_PATH}/mdX"
-  if [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -eq 0 ]; then
-    echo "Failed to mount"
-    return 1
-  fi
-  return 0
-}
-
-###############################################################################
-# Convert Netmask eq. 255.255.255.0 to /24
-# 1 - Netmask
-function convert_netmask() {
-  bits=0
-  for octet in $(echo $1| sed 's/\./ /g'); do 
-      binbits=$(echo "obase=2; ibase=10; ${octet}"| bc | sed 's/0//g') 
-      bits=$((${bits} + ${#binbits}))
-  done
-  echo "${bits}"
-}
-
-###############################################################################
 # sort netif name
 # @1 -mac1,mac2,mac3...
 function _sort_netif() {
   ETHLIST=""
-  ETHX=$(ls /sys/class/net/ | grep eth) # real network cards list
+  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) # real network cards list
   for ETH in ${ETHX}; do
-    MAC="$(cat /sys/class/net/${ETH}/address | sed 's/://g' | tr '[:upper:]' '[:lower:]')"
-    BUS=$(ethtool -i ${ETH} | grep bus-info | awk '{print $2}')
+    MAC="$(cat /sys/class/net/${ETH}/address 2>/dev/null | sed 's/://g' | tr '[:upper:]' '[:lower:]')"
+    BUS=$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | awk '{print $2}')
     ETHLIST="${ETHLIST}${BUS} ${MAC} ${ETH}\n"
   done
 
@@ -289,7 +230,7 @@ EOF
     [ ${IDX} -ge $(wc -l <${TMP_PATH}/ethlist) ] && break
     ETH=$(cat ${TMP_PATH}/ethlist | sed -n "$((${IDX} + 1))p" | awk '{print $3}')
     # echo "ETH: ${ETH}"
-    if [[ -n "${ETH}" && ! "${ETH}" = "eth${IDX}" ]]; then
+    if [ -n "${ETH}" ] && [ ! "${ETH}" = "eth${IDX}" ]; then
       # echo "change ${ETH} <=> eth${IDX}"
       ip link set dev eth${IDX} down
       ip link set dev ${ETH} down
@@ -311,6 +252,65 @@ EOF
 
   rm -f ${TMP_PATH}/ethlist
   return 0
+}
+
+###############################################################################
+# get bus of disk
+# 1 - device path
+function getBus() {
+  BUS=""
+  # usb/ata(sata/ide)/scsi
+  [ -z "${BUS}" ] && BUS=$(udevadm info --query property --name "${1}" 2>/dev/null | grep ID_BUS | cut -d= -f2 | sed 's/ata/sata/')
+  # usb/sata(sata/ide)/nvme
+  [ -z "${BUS}" ] && BUS=$(lsblk -dpno KNAME,TRAN 2>/dev/null | grep "${1} " | awk '{print $2}') #Spaces are intentional
+  # usb/scsi(sata/ide)/virtio(scsi/virtio)/mmc/nvme
+  [ -z "${BUS}" ] && BUS=$(lsblk -dpno KNAME,SUBSYSTEMS 2>/dev/null | grep "${1} " | awk -F':' '{print $(NF-1)}' | sed 's/_host//') #Spaces are intentional
+  echo "${BUS}"
+  return 0
+}
+
+###############################################################################
+# get IP
+# 1 - ethN
+function getIP() {
+  IP=""
+  if [ -n "${1}" -a -d "/sys/class/net/${1}" ]; then
+    IP=$(ip route show dev ${1} 2>/dev/null | sed -n 's/.* via .* src \(.*\)  metric .*/\1/p')
+    [ -z "${IP}" ] && IP=$(ip addr show ${1} scope global 2>/dev/null | grep -E "inet .* eth" | awk '{print $2}' | cut -f1 -d'/' | head -1)
+  else
+    IP=$(ip route show 2>/dev/null | sed -n 's/.* via .* src \(.*\)  metric .*/\1/p' | head -1)
+    [ -z "${IP}" ] && IP=$(ip addr show scope global 2>/dev/null | grep -E "inet .* eth" | awk '{print $2}' | cut -f1 -d'/' | head -1)
+  fi
+  echo "${IP}"
+  return 0
+}
+
+###############################################################################
+# Find and mount the DSM root filesystem
+# (based on pocopico's TCRP code)
+function findAndMountDSMRoot() {
+  [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -gt 0 ] && return 0
+  dsmrootdisk="$(blkid | grep -i linux_raid_member | grep -E "/dev/.*1:" | head -1 | awk -F ":" '{print $1}')"
+  [ -z "${dsmrootdisk}" ] && return 1
+  [ ! -d "${TMP_PATH}/mdX" ] && mkdir -p "${TMP_PATH}/mdX"
+  [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -eq 0 ] && mount -t ext4 "${dsmrootdisk}" "${TMP_PATH}/mdX"
+  if [ $(mount | grep -i "${TMP_PATH}/mdX" | wc -l) -eq 0 ]; then
+    echo "Failed to mount"
+    return 1
+  fi
+  return 0
+}
+
+###############################################################################
+# Convert Netmask eq. 255.255.255.0 to /24
+# 1 - Netmask
+function convert_netmask() {
+  bits=0
+  for octet in $(echo $1| sed 's/\./ /g'); do 
+      binbits=$(echo "obase=2; ibase=10; ${octet}"| bc | sed 's/0//g') 
+      bits=$((${bits} + ${#binbits}))
+  done
+  echo "${bits}"
 }
 
 ###############################################################################

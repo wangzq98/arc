@@ -28,10 +28,11 @@ TITLE="Boot:"
 TITLE+=" [${BUS}]"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 
-# If user config file not exists, initialize it
+# Check for Config File
 if [ ! -f "${USER_CONFIG_FILE}" ]; then
   touch "${USER_CONFIG_FILE}"
 fi
+# Config Init
 initConfigKey "lkm" "prod" "${USER_CONFIG_FILE}"
 initConfigKey "model" "" "${USER_CONFIG_FILE}"
 initConfigKey "productver" "" "${USER_CONFIG_FILE}"
@@ -61,9 +62,8 @@ initConfigKey "arc.kernelload" "power" "${USER_CONFIG_FILE}"
 initConfigKey "arc.kernelpanic" "5" "${USER_CONFIG_FILE}"
 initConfigKey "arc.macsys" "hardware" "${USER_CONFIG_FILE}"
 initConfigKey "arc.odp" "false" "${USER_CONFIG_FILE}"
-initConfigKey "arc.modulescopy" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.hddsort" "false" "${USER_CONFIG_FILE}"
-initConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
+initConfigKey "arc.usbmount" "automated" "${USER_CONFIG_FILE}"
 initConfigKey "arc.kernel" "official" "${USER_CONFIG_FILE}"
 initConfigKey "arc.custom" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.version" "${ARC_VERSION}" "${USER_CONFIG_FILE}"
@@ -73,6 +73,10 @@ initConfigKey "ip" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "netmask" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "mac" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "static" "{}" "${USER_CONFIG_FILE}"
+# Config Update
+USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
+[ "${USBMOUNT}" = "true" ] && writeConfigKey "arc.usbmount" "external" "${USER_CONFIG_FILE}"
+[ "${USBMOUNT}" = "false" ] && writeConfigKey "arc.usbmount" "internal" "${USER_CONFIG_FILE}"
 
 # Init Network
 ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
