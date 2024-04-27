@@ -24,7 +24,7 @@ printf "\033[1;30m%*s\033[A\n" ${COLUMNS} ""
 printf "\033[1;34m%*s\033[0m\n" ${COLUMNS} "${BANNER}"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 TITLE="Boot:"
-[ ${EFI} -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [Legacy]"
+[ ${EFI} -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [BIOS]"
 TITLE+=" [${BUS}]"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 
@@ -51,6 +51,7 @@ initConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
 initConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
 initConfigKey "arc.sn" "" "${USER_CONFIG_FILE}"
 initConfigKey "arc.ipv6" "false" "${USER_CONFIG_FILE}"
+initConfigKey "arc.dsmlogo" "true" "${USER_CONFIG_FILE}"
 initConfigKey "arc.emmcboot" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.offline" "false" "${USER_CONFIG_FILE}"
 initConfigKey "arc.directboot" "false" "${USER_CONFIG_FILE}"
@@ -77,8 +78,6 @@ initConfigKey "static" "{}" "${USER_CONFIG_FILE}"
 USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
 [ "${USBMOUNT}" = "internal" ] && writeConfigKey "arc.usbmount" "true" "${USER_CONFIG_FILE}"
 [ "${USBMOUNT}" = "external" ] && writeConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
-MAXDISKS="$(readConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}")"
-[ -n "${MAXDISKS}" ] && deleteConfigKey "synoinfo.maxdisks" "${USER_CONFIG_FILE}"
 
 # Init Network
 ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
@@ -96,10 +95,10 @@ for ETH in ${ETHX}; do
     if [ ! "${MACA}" = "${MACR}" ]; then
       MAC="${MACA:0:2}:${MACA:2:2}:${MACA:4:2}:${MACA:6:2}:${MACA:8:2}:${MACA:10:2}"
       echo "Setting ${ETH} MAC to ${MAC}"
-      ip link set dev ${ETH} address "${MAC}" >/dev/null 2>&1 &&
-      (/etc/init.d/S41dhcpcd restart >/dev/null 2>&1 &) || true
+      ip link set dev ${ETH} address "${MAC}" >/dev/null 2>&1 || true
       sleep 2
     fi
+    /etc/init.d/S41dhcpcd restart >/dev/null 2>&1 || true
     echo
   fi
   NIC=$((${NIC} + 1))
@@ -183,7 +182,11 @@ for ETH in ${ETHX}; do
     if [ -n "${IP}" ]; then
       SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
       writeConfigKey "ip.${ETH}" "${IP}" "${USER_CONFIG_FILE}"
-      echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:7681\033[0m to connect to Arc via web."
+      if [[ "${IP}" =~ ^169\.254\..* ]]; then
+        echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
+      else
+        echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:7681\033[0m to connect to Arc via web."
+      fi
       ethtool -s ${ETH} wol g 2>/dev/null
       break
     fi

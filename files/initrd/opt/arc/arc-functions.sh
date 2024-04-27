@@ -95,8 +95,9 @@ function modulesMenu() {
       2 "Select loaded Modules" \
       3 "Select all Modules" \
       4 "Deselect all Modules" \
-      5 "Choose Modules to include" \
+      5 "Choose Modules" \
       6 "Add external module" \
+      7 "Choose Modules to copy to DSM" \
       2>"${TMP_PATH}/resp"
     [ $? -ne 0 ] && break
     case "$(cat ${TMP_PATH}/resp)" in
@@ -206,6 +207,21 @@ function modulesMenu() {
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         ;;
+      7)
+        if [ -f ${USER_UP_PATH}/modulelist ]; then
+          cp -f "${USER_UP_PATH}/modulelist" "${TMP_PATH}/modulelist.tmp"
+        else
+          cp -f "${ARC_PATH}/include/modulelist" "${TMP_PATH}/modulelist.tmp"
+        fi
+        while true; do
+          DIALOG --title "Edit with caution" \
+            --editbox "${TMP_PATH}/modulelist.tmp" 0 0 2>"${TMP_PATH}/modulelist.user"
+          [ $? -ne 0 ] && return
+          [ ! -d "${USER_UP_PATH}" ] && mkdir -p "${USER_UP_PATH}"
+          mv -f "${TMP_PATH}/modulelist.user" "${USER_UP_PATH}/modulelist"
+          dos2unix "${USER_UP_PATH}/modulelist"
+          break
+        done
     esac
   done
   return
@@ -687,6 +703,7 @@ function updateMenu() {
       4 "Update Modules" \
       5 "Update Configs" \
       6 "Update LKMs" \
+      7 "Automated Update Mode" \
       2>"${TMP_PATH}/resp"
     [ $? -ne 0 ] && return 1
     case "$(cat ${TMP_PATH}/resp)" in
@@ -983,6 +1000,11 @@ function updateMenu() {
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         dialog --backtitle "$(backtitle)" --title "Update LKMs" --aspect 18 \
           --msgbox "LKMs updated successful! New Version: ${TAG}" 0 0
+        ;;
+      7)
+        dialog --backtitle "$(backtitle)" --title "Automated Update" --aspect 18 \
+          --msgbox "Loader will reboot to Automated Update Mode.\nPlease wait until progress is finished!" 0 0
+        rebootTo update
         ;;
     esac
   done

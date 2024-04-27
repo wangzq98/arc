@@ -22,7 +22,7 @@ printf "\033[1;30m%*s\033[A\n" ${COLUMNS} ""
 printf "\033[1;34m%*s\033[0m\n" ${COLUMNS} "${BANNER}"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 TITLE="Boot:"
-[ ${EFI} -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [Legacy]"
+[ ${EFI} -eq 1 ] && TITLE+=" [UEFI]" || TITLE+=" [BIOS]"
 TITLE+=" [${BUS}]"
 printf "\033[1;34m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
 
@@ -193,7 +193,11 @@ elif [ "${DIRECTBOOT}" = "false" ]; then
       MSG="DHCP"
       if [ -n "${IP}" ]; then
         SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
-        echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:5000\033[0m to connect to DSM via web."
+        if [[ "${IP}" =~ ^169\.254\..* ]]; then
+          echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
+        else
+          echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:5000\033[0m to connect to DSM via web."
+        fi
         ethtool -s ${ETH} wol g 2>/dev/null
         [ ! -n "${IPCON}" ] && IPCON="${IP}"
         break
@@ -230,6 +234,19 @@ elif [ "${DIRECTBOOT}" = "false" ]; then
   echo -en "\r$(printf "%$((${#MSG} * 2))s" " ")\n"
 
   echo -e "\033[1;37mLoading DSM kernel...\033[0m"
+
+  DSMLOGO="$(readConfigKey "arc.dsmlogo" "${USER_CONFIG_FILE}")"
+  if [[ "${DSMLOGO}" = "true" && -c "/dev/fb0" ]]; then
+    [[ "${IPCON}" =~ ^169\.254\..* ]] && IPCON=""
+    if [ -n "${IPCON}" ]; then
+      URL="http://${IPCON}:5000" || URL="http://find.synology.com/"
+      python ${ARC_PATH}/include/functions.py makeqr -d "${URL}" -l "6" -o "${TMP_PATH}/qrcode_boot.png"
+      [ -f "${TMP_PATH}/qrcode_boot.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_boot.png" >/dev/null 2>/dev/null || true
+    else
+      python ${ARC_PATH}/include/functions.py makeqr -f "${ARC_PATH}/include/syno.png" -l "7" -o "${TMP_PATH}/qrcode_syno.png"
+      [ -f "${TMP_PATH}/qrcode_syno.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_syno.png" >/dev/null 2>/dev/null || true
+    fi
+  fi
 
   # Executes DSM kernel via KEXEC
   KEXECARGS=""
