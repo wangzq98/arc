@@ -1,15 +1,15 @@
 # Get Network Config for Loader
 function getnet() {
-  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
+  ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   if [ "${ARCPATCH}" = "true" ]; then
     ARCMACNUM=1
     for ETH in ${ETHX}; do
-      ARCMAC="$(readModelKey "${MODEL}" "arc.mac${ARCMACNUM}")"
+      ARCMAC=""
+      ARCMAC="$(readConfigKey "${MODEL}.mac${ARCMACNUM}" "${S_FILE}")"
       [ -n "${ARCMAC}" ] && writeConfigKey "mac.${ETH}" "${ARCMAC}" "${USER_CONFIG_FILE}"
       [ -z "${ARCMAC}" ] && break
       ARCMACNUM=$((${ARCMACNUM} + 1))
-      ARCMAC=""
     done
   elif [ "${ARCPATCH}" = "false" ]; then
     ETHN=$(ls /sys/class/net/ 2>/dev/null | grep eth | wc -l)
@@ -58,16 +58,16 @@ function getnet() {
 
 # Get Network Config for Loader
 function autogetnet() {
-  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
+  ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   if [ "${ARCPATCH}" = "true" ]; then
     ARCMACNUM=1
     for ETH in ${ETHX}; do
-      ARCMAC="$(readModelKey "${MODEL}" "arc.mac${ARCMACNUM}")"
+      ARCMAC=""
+      ARCMAC="$(readConfigKey "${MODEL}.mac${ARCMACNUM}" "${S_FILE}")"
       [ -n "${ARCMAC}" ] && writeConfigKey "mac.${ETH}" "${ARCMAC}" "${USER_CONFIG_FILE}"
       [ -z "${ARCMAC}" ] && break
       ARCMACNUM=$((${ARCMACNUM} + 1))
-      ARCMAC=""
     done
   else
     ETHN=$(ls /sys/class/net/ 2>/dev/null | grep eth | wc -l)
@@ -84,7 +84,7 @@ function autogetnet() {
 }
 
 # Get Amount of NIC
-ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
+ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
 # Get actual IP
 for ETH in ${ETHX}; do
   IPCON="$(getIP ${ETH})"

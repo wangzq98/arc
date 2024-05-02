@@ -43,6 +43,7 @@ initConfigKey "ramdisk-hash" "" "${USER_CONFIG_FILE}"
 initConfigKey "cmdline" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "rd-compressed" "false" "${USER_CONFIG_FILE}"
+initConfigKey "satadom" "0" "${USER_CONFIG_FILE}"
 initConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "arc" "{}" "${USER_CONFIG_FILE}"
@@ -81,7 +82,7 @@ USBMOUNT="$(readConfigKey "arc.usbmount" "${USER_CONFIG_FILE}")"
 [ "${USBMOUNT}" = "external" ] && writeConfigKey "arc.usbmount" "false" "${USER_CONFIG_FILE}"
 
 # Init Network
-ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
+ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
 MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
 # Write Mac to config
 NIC=0
@@ -181,7 +182,7 @@ for ETH in ${ETHX}; do
       MSG="DHCP"
     fi
     if [ -n "${IP}" ]; then
-      SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
+      SPEED="$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')"
       writeConfigKey "ip.${ETH}" "${IP}" "${USER_CONFIG_FILE}"
       if [[ "${IP}" =~ ^169\.254\..* ]]; then
         echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
