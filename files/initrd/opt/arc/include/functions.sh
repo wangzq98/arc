@@ -85,7 +85,7 @@ function generateSerial() {
   ID="$(readModelKey "${1}" "id")"
   PREFIX="$(readConfigArray "${ID}.prefix" "${S_FILE}" | sort -R | tail -1)"
   MIDDLE="$(readConfigArray "${ID}.middle" "${S_FILE}" | sort -R | tail -1)"
-  SUFFIX=$(readConfigKey "${ID}.suffix" "${S_FILE}")
+  SUFFIX="$(readConfigKey "${ID}.suffix" "${S_FILE}")"
 
   case "${SUFFIX}" in
   numeric)
@@ -96,13 +96,14 @@ function generateSerial() {
     ;;
   esac
   SERIAL="${PREFIX:-"0000"}${MIDDLE:-"XXX"}${SUFFIX:-"123456"}"
-  echo "${SERIAL}"
+  echo ${SERIAL}
+  return 0
 }
 
 ###############################################################################
 # Generate a MAC address for a model
 # 1 - Model
-# 2 - number
+# 2 - Amount of MACs to generate
 # Returns serial number
 function generateMacAddress() {
   ID="$(readModelKey "${1}" "id")"
