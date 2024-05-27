@@ -634,6 +634,8 @@ function backupMenu() {
               TEXT+="\nArc Patch: ${ARCPATCH}"
               dialog --backtitle "$(backtitle)" --title "Restore Config" \
                 --aspect 18 --msgbox "${TEXT}" 0 0
+              PLATFORM="$(readConfigKey "platform" "${USER_CONFIG_FILE}")"
+              DT="$(readConfigKey "platforms.${PLATFORM}.dt" "${P_FILE}")"
               CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
               writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
               BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
@@ -1774,13 +1776,14 @@ function saveMenu() {
 # let user format disks from inside arc
 function formatdisks() {
   rm -f "${TMP_PATH}/opts" >/dev/null
-  while read -r KNAME KMODEL PKNAME TYPE; do
+  while read KNAME SIZE PKNAME; do
     [ -z "${KNAME}" ] && continue
-    [ "${KNAME}" = "${LOADER_DISK}" ] || [ "${PKNAME}" = "${LOADER_DISK}" ] || [ "${KMODEL}" = "${LOADER_DISK}" ] && continue
-    [ "${KNAME}" = /dev/md* ] && continue
-    [ -z "${KMODEL}" ] && KMODEL="${TYPE}"
-    echo "\"${KNAME}\" \"${KMODEL}\" \"off\"" >>"${TMP_PATH}/opts"
-  done <<<$(lsblk -pno KNAME,MODEL,PKNAME,TYPE | sort)
+    [[ "${KNAME}" = /dev/md* ]] && continue
+    [[ "${KNAME}" = "${LOADER_DISK}" || "${PKNAME}" = "${LOADER_DISK}" ]] && continue
+    [ -n "${PKNAME}" ] && PARTITION=" (Partition)" || PARTITION=" (Disk)"
+    [ -z "${SIZE}" ] && SIZE="Unknown"
+    echo "\"${KNAME}\" \"${SIZE}${PARTITION}\" \"off\"" >>"${TMP_PATH}/opts"
+  done <<<$(lsblk -pno KNAME,SIZE,PKNAME)
   if [ ! -f "${TMP_PATH}/opts" ]; then
     dialog --backtitle "$(backtitle)" --colors --title "Format Disks" \
       --msgbox "No disk found!" 0 0
