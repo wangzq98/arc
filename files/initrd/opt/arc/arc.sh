@@ -198,7 +198,7 @@ function arcModel() {
         else
           [ ${COMPATIBLE} -eq 1 ] && echo -e "${M} \"\t$(printf "\Zb%-8s\Zn \Zb%-15s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-5s\Zn \Zb%-10s\Zn \Zb%-12s\Zn \Zb%-10s\Zn \Zb%-10s\Zn" "${CPU}" "${A}" "${DTS}" "${IGPUS}" "${HBAS}" "${M_2_CACHE}" "${M_2_STORAGE}" "${USBS}" "${BETA}")\" ">>"${TMP_PATH}/menu"
         fi
-      done  <<<$(cat "${TMP_PATH}/modellist")
+      done < <(cat "${TMP_PATH}/modellist")
       if [ -n "${ARC_KEY}" ]; then
         dialog --backtitle "$(backtitle)" --title "Arc DSM Model" --colors \
           --cancel-label "Show all" --help-button --help-label "Exit" \
@@ -250,7 +250,7 @@ function arcModel() {
       MODEL="${readConfigKey "model" "${USER_CONFIG_FILE}"}"
     fi
     PLATFORM="$(grep -w "${MODEL}" "${TMP_PATH}/modellist" | awk '{print $2}' | head -n 1)"
-    MODELID="$(echo ${MODEL} | sed 's/d$/D/; s/rp$/RP/; s/rp+/RP+/; s/XS+/xs+/')"
+    MODELID=$(echo ${MODEL} | sed 's/d$/D/; s/rp$/RP/; s/rp+/RP+/')
     writeConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
@@ -265,10 +265,8 @@ function arcModel() {
     writeConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
     CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-    if [ -f "${ORI_ZIMAGE_FILE}" ] || [ -f "${ORI_RDGZ_FILE}" ] || [ -f "${MOD_ZIMAGE_FILE}" ] || [ -f "${MOD_RDGZ_FILE}" ]; then
-      # Delete old files
-      rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null
-    fi
+    rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
+    rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/"* >/dev/null 2>&1 || true
   fi
   arcVersion
 }
@@ -307,14 +305,14 @@ function arcVersion() {
   writeConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
   while IFS=': ' read -r KEY VALUE; do
     writeConfigKey "synoinfo.\"${KEY}\"" "${VALUE}" "${USER_CONFIG_FILE}"
-  done <<<$(readConfigMap "platforms.${PLATFORM}.synoinfo" "${P_FILE}")
+  done < <(readConfigMap "platforms.${PLATFORM}.synoinfo" "${P_FILE}")
   # Check Addons for Platform
   while IFS=': ' read -r ADDON PARAM; do
     [ -z "${ADDON}" ] && continue
     if ! checkAddonExist "${ADDON}" "${PLATFORM}"; then
       deleteConfigKey "addons.\"${ADDON}\"" "${USER_CONFIG_FILE}"
     fi
-  done <<<$(readConfigMap "addons" "${USER_CONFIG_FILE}")
+  done < <(readConfigMap "addons" "${USER_CONFIG_FILE}")
   # Reset Modules
   KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.[${PRODUCTVER}].kver" "${P_FILE}")"
   # Modify KVER for Epyc7002
@@ -326,7 +324,7 @@ function arcVersion() {
   writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
   while read -r ID DESC; do
     writeConfigKey "modules.\"${ID}\"" "" "${USER_CONFIG_FILE}"
-  done <<<$(getAllModules "${PLATFORM}" "${KVERP}")
+  done < <(getAllModules "${PLATFORM}" "${KVERP}")
   # Check for Only Version
   if [ "${ONLYVERSION}" = "true" ]; then
     # Build isn't done
@@ -465,7 +463,7 @@ function arcSettings() {
     # Select Addons
     addonSelection
     # Check for DT and HBA/Raid Controller
-    if [ ! "${PLATFORM}" = "epyc7002" ]; then
+    if [ "${PLATFORM}" != "epyc7002" ]; then
       if [ "${DT}" = "true" ] && [ "${EXTERNALCONTROLLER}" = "true" ]; then
         dialog --backtitle "$(backtitle)" --title "Arc Warning" \
           --msgbox "WARN: You use a HBA/Raid Controller and selected a DT Model.\nThis is still an experimental Feature." 0 0
@@ -512,14 +510,8 @@ function arcSettings() {
       return 1
     fi
   else
-    # Check for Custom Build
-    if [ "${CUSTOM}" = "true" ]; then
-      # Build Loader
-      make
-    else
-      # Show Config Summary
-      arcSummary
-    fi
+    # Build Loader
+    make
   fi
 }
 
@@ -610,19 +602,19 @@ function make() {
   CUSTOM="$(readConfigKey "arc.custom" "${USER_CONFIG_FILE}")"
   VALID=false
   # Cleanup
-  [ -d "${UNTAR_PAT_PATH}" ] && rm -rf "${UNTAR_PAT_PATH}" >/dev/null
+  [ -d "${UNTAR_PAT_PATH}" ] && rm -rf "${UNTAR_PAT_PATH}"
   mkdir -p "${UNTAR_PAT_PATH}"
   if [ "${OFFLINE}" = "false" ]; then
     # Get PAT Data from Config
     PAT_URL_CONF="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
     PAT_HASH_CONF="$(readConfigKey "arc.pathash" "${USER_CONFIG_FILE}")"
-    # Get PAT Data from Syno
+    # Get PAT Data
     dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
-      --infobox "Get PAT Data from Syno..." 3 30
+      --infobox "Get PAT Data from Github..." 3 30
     idx=0
     while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
-      PAT_URL="$(curl -m 5 -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODELID/+/%2B}/${PRODUCTVER}/pat_url")"
-      PAT_HASH="$(curl -m 5 -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODELID/+/%2B}/${PRODUCTVER}/pat_hash")"
+      PAT_URL="$(curl -m 5 -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER}/pat_url")"
+      PAT_HASH="$(curl -m 5 -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/dsm/${MODEL/+/%2B}/${PRODUCTVER}/pat_hash")"
       PAT_URL=${PAT_URL%%\?*}
       if [ -n "${PAT_URL}" ] && [ -n "${PAT_HASH}" ]; then
         if echo "${PAT_URL}" | grep -q "https://*"; then
@@ -630,17 +622,16 @@ function make() {
           break
         fi
       fi
-      sleep 2
+      sleep 3
       idx=$((${idx} + 1))
     done
-    if [ -z "${PAT_URL}" ] || [ -z "${PAT_HASH}" ] || [ "${VALID}" = "false" ]; then
+    if [ "${VALID}" = "false" ]; then
       dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
-        --infobox "Syno Connection failed,\ntry to get from Github..." 4 30
+        --infobox "Github Data failed,\ntry to get from Syno..." 4 30
       idx=0
-      while [ ${idx} -le 3 ]; do # Loop 3 times, if successful, break
-        PAT_DATA=$(curl -m 5 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODELID/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}")
-        PAT_URL=$(echo ${PAT_DATA} | jq -r '.info.system.detail[0].items[0].files[0].url')
-        PAT_HASH=$(echo ${PAT_DATA} | jq -r '.info.system.detail[0].items[0].files[0].checksum')
+      while [ ${idx} -le 5 ]; do # Loop 3 times, if successful, break
+        PAT_URL="$(curl -m 10 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
+        PAT_HASH="$(curl -m 10 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].checksum')"
         PAT_URL=${PAT_URL%%\?*}
         if [ -n "${PAT_URL}" ] && [ -n "${PAT_HASH}" ]; then
           if echo "${PAT_URL}" | grep -q "https://*"; then
@@ -648,12 +639,11 @@ function make() {
             break
           fi
         fi
-        sleep 2
+        sleep 3
         idx=$((${idx} + 1))
       done
     fi
-    if [ "${CUSTOM}" = "false" ]; then
-      if [ "${VALID}" = "false" ]; then
+    if [ "${CUSTOM}" = "false" ] && [ "${VALID}" = "false" ]; then
         MSG="Failed to get PAT Data.\nPlease manually fill in the URL and Hash of PAT."
         PAT_URL=""
         PAT_HASH=""
@@ -665,13 +655,8 @@ function make() {
         return 1                     # 1 or 255  # cancel-button or ESC
         PAT_URL="$(cat "${TMP_PATH}/resp" | sed -n '1p')"
         PAT_HASH="$(cat "${TMP_PATH}/resp" | sed -n '2p')"
-      fi
     else
-      if [ "${VALID}" = "true" ]; then
-        dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
-          --infobox "Successfully got PAT Data..." 4 30
-        sleep 2
-      else
+      if [ "${VALID}" = "false" ]; then
         dialog --backtitle "$(backtitle)" --colors --title "Arc Build" \
           --infobox "Could not get PAT Data..." 4 30
         PAT_URL=""
@@ -685,23 +670,17 @@ function make() {
         writeConfigKey "arc.pathash" "${PAT_HASH}" "${USER_CONFIG_FILE}"
         DSM_FILE="${UNTAR_PAT_PATH}/${PAT_HASH}.tar"
         # Get new Files
-        DSM_URL="https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/files/${MODELID/+/%2B}/${PRODUCTVER}/${PAT_HASH}.tar"
-        if curl -k -s -w "%{http_code}" -L "${DSM_URL}" -o "${DSM_FILE}" 2>/dev/null; then
-          dialog --backtitle "$(backtitle)" --title "DSM Download" --aspect 18 \
-            --infobox "DSM Image download successful!" 3 40
+        DSM_URL="https://raw.githubusercontent.com/AuxXxilium/arc-dsm/main/files/${MODEL/+/%2B}/${PRODUCTVER}/${PAT_HASH}.tar"
+        if curl -sk -w "%{http_code}" -L "${DSM_URL}" -o "${DSM_FILE}"; then
           VALID=true
-          sleep 2
         else
           dialog --backtitle "$(backtitle)" --title "DSM Download" --aspect 18 \
             --infobox "No DSM Image found!\nTry to get .pat from Syno." 4 40
-          sleep 2
+          sleep 5
           # Grep PAT_URL
           PAT_FILE="${TMP_PATH}/${PAT_HASH}.pat"
-          if curl -k -s -w "%{http_code}" -L "${PAT_URL}" -o "${PAT_FILE}" 2>/dev/null; then
-            dialog --backtitle "$(backtitle)" --title "DSM Download" --aspect 18 \
-              --infobox "DSM Image download successful!" 3 40
+          if curl -sk -w "%{http_code}" -L "${PAT_URL}" -o "${PAT_FILE}"; then
             VALID=true
-            sleep 2
           else
             dialog --backtitle "$(backtitle)" --title "DSM Download" --aspect 18 \
               --infobox "No DSM Image found!\nExit." 4 40
@@ -710,16 +689,11 @@ function make() {
           fi
         fi
         if [ -f "${DSM_FILE}" ] && [ "${VALID}" = "true" ]; then
-          tar -xf "${DSM_FILE}" -C "${UNTAR_PAT_PATH}" >"${LOG_FILE}" 2>/dev/null
-          dialog --backtitle "$(backtitle)" --title "DSM Extraction" --aspect 18 \
-            --infobox "DSM Extraction successful!" 3 40
+          tar -xf "${DSM_FILE}" -C "${UNTAR_PAT_PATH}"
           VALID=true
-          sleep 2
-        elif [ -f "${PAT_FILE}" ] && [ "${VALID}" = "true" ] && extractDSMFiles "${PAT_FILE}" "${UNTAR_PAT_PATH}"; then
-          dialog --backtitle "$(backtitle)" --title "DSM Extraction" --aspect 18 \
-            --infobox "DSM Extraction successful!" 3 40
+        elif [ -f "${PAT_FILE}" ] && [ "${VALID}" = "true" ]; then
+          extractDSMFiles "${PAT_FILE}" "${UNTAR_PAT_PATH}"
           VALID=true
-          sleep 2
         else
           dialog --backtitle "$(backtitle)" --title "DSM Extraction" --aspect 18 \
             --infobox "DSM Extraction failed!\nExit." 4 40
@@ -730,11 +704,8 @@ function make() {
     fi
   elif [ "${OFFLINE}" = "true" ]; then
     if [ -f "${ORI_ZIMAGE_FILE}" ] && [ -f "${ORI_RDGZ_FILE}" ] && [ -f "${MOD_ZIMAGE_FILE}" ] && [ -f "${MOD_RDGZ_FILE}" ]; then
-      rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null
+      rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}"
       VALID=true
-      dialog --backtitle "$(backtitle)" --title "DSM Data" --aspect 18 \
-        --infobox "DSM Model Data found." 3 40
-      sleep 2
     else
       # Check for existing Files
       mkdir -p "${TMP_UP_PATH}"
@@ -746,16 +717,13 @@ function make() {
       if [ -f "${PAT_FILE}" ] && [ $(wc -c "${PAT_FILE}" | awk '{print $1}') -gt 300000000 ]; then
         dialog --backtitle "$(backtitle)" --title "DSM Upload" --aspect 18 \
           --infobox "DSM Image found!" 3 40
-        sleep 2
         # Remove PAT Data for Offline
         writeConfigKey "arc.paturl" "#" "${USER_CONFIG_FILE}"
         writeConfigKey "arc.pathash" "#" "${USER_CONFIG_FILE}"
         # Extract Files
-        if [ -f "${PAT_FILE}" ] && extractDSMFiles "${PAT_FILE}" "${UNTAR_PAT_PATH}"; then
-          dialog --backtitle "$(backtitle)" --title "DSM Extraction" --aspect 18 \
-            --infobox "DSM Extraction successful!" 3 40
+        if [ -f "${PAT_FILE}" ]; then
+          extractDSMFiles "${PAT_FILE}" "${UNTAR_PAT_PATH}"
           VALID=true
-          sleep 2
         else
           dialog --backtitle "$(backtitle)" --title "DSM Extraction" --aspect 18 \
             --infobox "DSM Extraction failed!\nExit." 4 40
@@ -778,15 +746,9 @@ function make() {
   # Copy DSM Files to Locations if DSM Files not found
   if [ ! -f "${ORI_ZIMAGE_FILE}" ] || [ ! -f "${ORI_RDGZ_FILE}" ]; then
     if copyDSMFiles "${UNTAR_PAT_PATH}"; then
-      dialog --backtitle "$(backtitle)" --title "DSM Copy" --aspect 18 \
-        --infobox "DSM Copy successful!" 3 40
       VALID=true
-      sleep 2
     else
-      dialog --backtitle "$(backtitle)" --title "DSM Copy" --aspect 18 \
-        --infobox "DSM Copy failed!\nExit." 4 40
       VALID=false
-      sleep 5
     fi
   fi
   if [ -f "${ORI_ZIMAGE_FILE}" ] && [ -f "${ORI_RDGZ_FILE}" ] && [ "${VALID}" = "true" ]; then
@@ -812,38 +774,29 @@ function make() {
 # Finish Building Loader
 function arcFinish() {
   # Verify Files exist
-  if [ -f "${ORI_ZIMAGE_FILE}" ] && [ -f "${ORI_RDGZ_FILE}" ] && [ -f "${MOD_ZIMAGE_FILE}" ] && [ -f "${MOD_RDGZ_FILE}" ]; then
-    CUSTOM="$(readConfigKey "arc.custom" "${USER_CONFIG_FILE}")"
-    # Build is done
-    writeConfigKey "arc.builddone" "true" "${USER_CONFIG_FILE}"
-    BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-    # Check for Automated Mode
-    if grep -q "automated_arc" /proc/cmdline; then
-      # Check for Custom Build
-      if [ "${CUSTOM}" = "false" ]; then
-        [ -f "${PART3_PATH}/automated" ] && rm -f "${PART3_PATH}/automated" >/dev/null
-      fi
+  CUSTOM="$(readConfigKey "arc.custom" "${USER_CONFIG_FILE}")"
+  # Build is done
+  rm -f "${LOG_FILE}" >/dev/null
+  writeConfigKey "arc.builddone" "true" "${USER_CONFIG_FILE}"
+  BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+  # Check for Automated Mode
+  if [ "${CUSTOM}" = "true" ]; then
+    boot && exit 0
+  elif [ "${CUSTOM}" = "false" ]; then
+    [ -f "${PART3_PATH}/automated" ] && rm -f "${PART3_PATH}/automated" >/dev/null
+    # Ask for Boot
+    dialog --clear --backtitle "$(backtitle)" --title "Build done"\
+      --menu "Boot now?" 7 40 0 \
+      1 "Yes - Boot Arc Loader now" \
+      2 "No - I want to make changes" \
+    2>"${TMP_PATH}/resp"
+    resp=$(cat ${TMP_PATH}/resp)
+    [ -z "${resp}" ] && return 1
+    if [ ${resp} -eq 1 ]; then
       boot && exit 0
-    else
-      # Ask for Boot
-      dialog --clear --backtitle "$(backtitle)" --title "Build done"\
-        --menu "Boot now?" 7 40 0 \
-        1 "Yes - Boot Arc Loader now" \
-        2 "No - I want to make changes" \
-      2>"${TMP_PATH}/resp"
-      resp=$(cat ${TMP_PATH}/resp)
-      [ -z "${resp}" ] && return 1
-      if [ ${resp} -eq 1 ]; then
-        boot && exit 0
-      elif [ ${resp} -eq 2 ]; then
-        return 0
-      fi
+    elif [ ${resp} -eq 2 ]; then
+      return 0
     fi
-  else
-    dialog --backtitle "$(backtitle)" --title "Error" --aspect 18 \
-      --infobox "Build failed!\nPlease check your Connection and Diskspace!" 0 0
-    sleep 5
-    return 1
   fi
 }
 
@@ -854,7 +807,7 @@ function juniorboot() {
   [ "${BUILDDONE}" = "false" ] && dialog --backtitle "$(backtitle)" --title "Alert" \
     --yesno "Config changed, please build Loader first." 0 0
   if [ $? -eq 0 ]; then
-    premake
+    make
   fi
   grub-editenv ${GRUB_PATH}/grubenv set next_entry="junior"
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
@@ -870,7 +823,7 @@ function recoveryboot() {
   [ "${BUILDDONE}" = "false" ] && dialog --backtitle "$(backtitle)" --title "Alert" \
     --yesno "Config changed, please build Loader first." 0 0
   if [ $? -eq 0 ]; then
-    premake
+    make
   fi
   grub-editenv ${GRUB_PATH}/grubenv set next_entry="recovery"
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
@@ -886,7 +839,7 @@ function boot() {
   [ "${BUILDDONE}" = "false" ] && dialog --backtitle "$(backtitle)" --title "Alert" \
     --yesno "Config changed, you need to rebuild the Loader?" 0 0
   if [ $? -eq 0 ]; then
-    premake
+    make
   fi
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
     --infobox "Booting DSM...\nPlease stay patient!" 4 25
@@ -1060,7 +1013,7 @@ else
       w) resetLoader; NEXT="w" ;;
       # Boot Section
       6) [ "${BOOTOPTS}" = "true" ] && BOOTOPTS='false' || BOOTOPTS='true'
-        ARCOPTS="${BOOTOPTS}"
+        BOOTOPTS="${BOOTOPTS}"
         NEXT="6"
         ;;
       m) [ "${KERNELLOAD}" = "kexec" ] && KERNELLOAD='power' || KERNELLOAD='kexec'
@@ -1101,7 +1054,7 @@ else
           writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
           while read -r ID DESC; do
             writeConfigKey "modules.\"${ID}\"" "" "${USER_CONFIG_FILE}"
-          done <<<$(getAllModules "${PLATFORM}" "${KVERP}")
+          done < <(getAllModules "${PLATFORM}" "${KVERP}")
         fi
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"

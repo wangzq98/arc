@@ -20,7 +20,7 @@ echo -e "Patching Ramdisk"
 rm -f "${MOD_RDGZ_FILE}"
 
 # Unzipping ramdisk
-rm -rf "${RAMDISK_PATH}" # Force clean
+rm -rf "${RAMDISK_PATH}"# Force clean
 mkdir -p "${RAMDISK_PATH}"
 (
   cd "${RAMDISK_PATH}"
@@ -54,7 +54,7 @@ if [ "${PRODUCTVERDSM}" != "${PRODUCTVER}" ]; then
   # Update new buildnumber
   echo -e "Ramdisk Version ${PRODUCTVER} does not match DSM Version ${PRODUCTVERDSM}!"
   echo -e "Try to use DSM Version ${PRODUCTVERDSM} for Patch."
-  writeConfigKey "productver" "${USER_CONFIG_FILE}"
+  writeConfigKey "productver" "${PRODUCTVERDSM}" "${USER_CONFIG_FILE}"
   PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
   PAT_URL=""
   PAT_HASH=""
@@ -83,24 +83,24 @@ declare -A MODULES
 # Read synoinfo and addons from config
 while IFS=': ' read -r KEY VALUE; do
   [ -n "${KEY}" ] && SYNOINFO["${KEY}"]="${VALUE}"
-done <<<$(readConfigMap "synoinfo" "${USER_CONFIG_FILE}")
+done < <(readConfigMap "synoinfo" "${USER_CONFIG_FILE}")
 while IFS=': ' read -r KEY VALUE; do
   [ -n "${KEY}" ] && ADDONS["${KEY}"]="${VALUE}"
-done <<<$(readConfigMap "addons" "${USER_CONFIG_FILE}")
+done < <(readConfigMap "addons" "${USER_CONFIG_FILE}")
 
 # Read modules from user config
 while IFS=': ' read -r KEY VALUE; do
   [ -n "${KEY}" ] && MODULES["${KEY}"]="${VALUE}"
-done <<<$(readConfigMap "modules" "${USER_CONFIG_FILE}")
+done < <(readConfigMap "modules" "${USER_CONFIG_FILE}")
 
 # Patches (diff -Naru OLDFILE NEWFILE > xxx.patch)
-PATCHS=()
-PATCHS+=("ramdisk-etc-rc-*.patch")
-PATCHS+=("ramdisk-init-script-*.patch")
-PATCHS+=("ramdisk-post-init-script-*.patch")
-PATCHS+=("ramdisk-disable-root-pwd-*.patch")
-PATCHS+=("ramdisk-disable-disabled-ports-*.patch")
-for PE in ${PATCHS[@]}; do
+PATCHES=()
+PATCHES+=("ramdisk-etc-rc-*.patch")
+PATCHES+=("ramdisk-init-script-*.patch")
+PATCHES+=("ramdisk-post-init-script-*.patch")
+PATCHES+=("ramdisk-disable-root-pwd-*.patch")
+PATCHES+=("ramdisk-disable-disabled-ports-*.patch")
+for PE in ${PATCHES[@]}; do
   RET=1
   echo "Patching with ${PE}" >"${LOG_FILE}"
   for PF in $(ls ${PATCH_PATH}/${PE} 2>/dev/null); do
@@ -167,12 +167,8 @@ chmod +x "${RAMDISK_PATH}/addons/addons.sh"
 for ADDON in "redpill" "revert" "misc" "eudev" "disks" "localrss" "notify" "updatenotify" "wol" "acpid"; do
   PARAMS=""
   if [ "${ADDON}" = "disks" ]; then
-    PARAMS="${HDDSORT}"
+    PARAMS=${HDDSORT}
     [ -f "${USER_UP_PATH}/${MODEL}.dts" ] && cp -f "${USER_UP_PATH}/${MODEL}.dts" "${RAMDISK_PATH}/addons/model.dts"
-  fi
-  if [ "${ADDON}" = "cpuinfo" ]; then
-    SPEED="$(echo $(grep 'MHz' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2 | cut -d. -f1))"
-    PARAMS="-p ${SPEED}"
   fi
   installAddon "${ADDON}" "${PLATFORM}" || exit 1
   echo "/addons/${ADDON}.sh \${1} ${PARAMS}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>>"${LOG_FILE}" || exit 1

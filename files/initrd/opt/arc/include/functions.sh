@@ -1,5 +1,4 @@
-
-[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"
 
 . ${ARC_PATH}/include/consts.sh
 . ${ARC_PATH}/include/configFile.sh
@@ -293,7 +292,7 @@ function getBus() {
 # 1 - ethN
 function getIP() {
   IP=""
-  if [ -n "${1}" -a -d "/sys/class/net/${1}" ]; then
+  if [ -n "${1}" ] && [ -d "/sys/class/net/${1}" ]; then
     IP=$(ip route show dev ${1} 2>/dev/null | sed -n 's/.* via .* src \(.*\)  metric .*/\1/p')
     [ -z "${IP}" ] && IP=$(ip addr show ${1} scope global 2>/dev/null | grep -E "inet .* eth" | awk '{print $2}' | cut -f1 -d'/' | head -1)
   else
@@ -364,8 +363,8 @@ function rebootTo() {
 function copyDSMFiles() {
   if [ -f "${1}/grub_cksum.syno" ] && [ -f "${1}/GRUB_VER" ] && [ -f "${1}/zImage" ] && [ -f "${1}/rd.gz" ]; then
     # Remove old model files
-    rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/grub_cksum.syno" "${PART2_PATH}/GRUB_VER" >/dev/null
-    rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" >/dev/null
+    rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/grub_cksum.syno" "${PART2_PATH}/GRUB_VER"
+    rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}"
     # Remove old build files
     rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null
     # Copy new model files
@@ -386,15 +385,22 @@ function copyDSMFiles() {
 # 1 - PAT File
 # 2 - Destination Path
 function extractDSMFiles() {
-  header=$(od -bcN2 ${1} | head -1 | awk '{print $3}')
+  rm -f "${LOG_FILE}"
+  PAT_PATH="${1}"
+  EXT_PATH="${2}"
+
+  header="$(od -bcN2 "${PAT_PATH}" | head -1 | awk '{print $3}')"
   case ${header} in
     105)
+    echo -e "Uncompressed tar"
     isencrypted="no"
     ;;
     213)
+    echo -e "Compressed tar"
     isencrypted="no"
     ;;
     255)
+    echo -e "Encrypted tar"
     isencrypted="yes"
     ;;
     *)
@@ -403,12 +409,13 @@ function extractDSMFiles() {
   esac
   if [ "${isencrypted}" = "yes" ]; then
     # Uses the extractor to untar PAT file
-    LD_LIBRARY_PATH="${EXTRACTOR_PATH}" "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${1}" "${2}" >"${LOG_FILE}" 2>&1
+    LD_LIBRARY_PATH="${EXTRACTOR_PATH}" "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_PATH}" "${EXT_PATH}" >"${LOG_FILE}" 2>&1
   else
     # Untar PAT file
-    tar -xf "${1}" -C "${2}" >"${LOG_FILE}" 2>&1
+    tar -xf "${PAT_PATH}" -C "${EXT_PATH}" >"${LOG_FILE}" 2>&1
   fi
-  if [ -f "${2}/grub_cksum.syno" ] && [ -f "${2}/GRUB_VER" ] && [ -f "${2}/zImage" ] && [ -f "${2}/rd.gz" ]; then
+  if [ -f "${EXT_PATH}/grub_cksum.syno" ] && [ -f "${EXT_PATH}/GRUB_VER" ] && [ -f "${EXT_PATH}/zImage" ] && [ -f "${EXT_PATH}/rd.gz" ]; then
+    rm -f "${LOG_FILE}"
     return 0
   else
     return 1
@@ -418,51 +425,56 @@ function extractDSMFiles() {
 ###############################################################################
 # Livepatch
 function livepatch() {
-  FAIL=0
+  PVALID=false
   # Patch zImage
   if ${ARC_PATH}/zimage-patch.sh; then
-    FAIL=0
+    PVALID=true
   else
-    FAIL=1
+    PVALID=false
   fi
-  # Patch Ramdisk
-  if ${ARC_PATH}/ramdisk-patch.sh; then
-    FAIL=0
-  else
-    FAIL=1
+  if [ "${PVALID}" = "true" ]; then
+    # Patch Ramdisk
+    if ${ARC_PATH}/ramdisk-patch.sh; then
+      PVALID=true
+    else
+      PVALID=false
+    fi
   fi
-  OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
-  if [ "${OFFLINE}" = "false" ]; then
-    # Looking for Update
-    if [ ${FAIL} -eq 1 ]; then
+  if [ "${PVALID}" = "false" ]; then
+    local OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
+    if [ "${OFFLINE}" = "false" ]; then
       # Update Configs
+      echo -e "Updating Configs..."
       updateConfigs
       # Update Patches
+      echo -e "Updating Patches..."
       updatePatches
       # Patch zImage
       if ${ARC_PATH}/zimage-patch.sh; then
-        FAIL=0
+        PVALID=true
       else
-        FAIL=1
+        PVALID=false
       fi
-      # Patch Ramdisk
-      if ${ARC_PATH}/ramdisk-patch.sh; then
-        FAIL=0
-      else
-        FAIL=1
+      if [ "${PVALID}" = "true" ]; then
+        # Patch Ramdisk
+        if ${ARC_PATH}/ramdisk-patch.sh; then
+          PVALID=true
+        else
+          PVALID=false
+        fi
       fi
     fi
   fi
-  if [ ${FAIL} -eq 1 ]; then
+  if [ "${PVALID}" = "false" ]; then
     echo
     echo -e "Patching DSM Files failed! Please stay patient for Update."
     sleep 5
     exit 1
   else
-    ZIMAGE_HASH_CUR="$(sha256sum "${ORI_ZIMAGE_FILE}" | awk '{print $1}')"
-    writeConfigKey "zimage-hash" "${ZIMAGE_HASH_CUR}" "${USER_CONFIG_FILE}"
-    RAMDISK_HASH_CUR="$(sha256sum "${ORI_RDGZ_FILE}" | awk '{print $1}')"
-    writeConfigKey "ramdisk-hash" "${RAMDISK_HASH_CUR}" "${USER_CONFIG_FILE}"
+    ZIMAGE_HASH="$(sha256sum "${ORI_ZIMAGE_FILE}" | awk '{print $1}')"
+    writeConfigKey "zimage-hash" "${ZIMAGE_HASH}" "${USER_CONFIG_FILE}"
+    RAMDISK_HASH="$(sha256sum "${ORI_RDGZ_FILE}" | awk '{print $1}')"
+    writeConfigKey "ramdisk-hash" "${RAMDISK_HASH}" "${USER_CONFIG_FILE}"
     echo "DSM Image patched - Ready!"
   fi
 }
