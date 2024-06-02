@@ -17,9 +17,7 @@
 # Memory: Check Memory installed
 RAMFREE=$(($(free -m | grep -i mem | awk '{print$2}') / 1024 + 1))
 RAMTOTAL=$((${RAMFREE} * 1024))
-[ -z "${RAMTOTAL}" ] || [ ${RAMTOTAL} -le 0 ] && RAMTOTAL=8192
-RAMMAX=$((${RAMTOTAL} * 2))
-RAMMIN=${RAMTOTAL}
+[ -z "${RAMTOTAL}" ] || [ ${RAMTOTAL} -le 0 ] && RAMTOTAL=8192}
 
 # Check for Hypervisor
 if grep -q "^flags.*hypervisor.*" /proc/cpuinfo; then
@@ -140,9 +138,9 @@ function arcModel() {
     RESTRICT=1
     PS="$(readConfigEntriesArray "platforms" "${P_FILE}" | sort)"
     if [ "${OFFLINE}" = "true" ]; then
-      MJ="$(python include/functions.py getmodelsoffline -p "${PS[*]}")"
+      MJ="$(python ${ARC_PATH}/include/functions.py getmodelsoffline -p "${PS[*]}")"
     else
-      MJ="$(python include/functions.py getmodels -p "${PS[*]}")"
+      MJ="$(python ${ARC_PATH}/include/functions.py getmodels -p "${PS[*]}")"
     fi
     if [[ -z "${MJ}" || "${MJ}" = "[]" ]]; then
       dialog --backtitle "$(backtitle)" --title "Model" --title "Model" \
@@ -273,7 +271,6 @@ function arcModel() {
     CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
     rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
-    rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/"* >/dev/null 2>&1 || true
   fi
   arcVersion
 }
@@ -302,7 +299,6 @@ function arcVersion() {
       if [ -f "${ORI_ZIMAGE_FILE}" ] || [ -f "${ORI_RDGZ_FILE}" ] || [ -f "${MOD_ZIMAGE_FILE}" ] || [ -f "${MOD_RDGZ_FILE}" ]; then
         # Delete old files
         rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
-        rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/"* >/dev/null 2>&1 || true
       fi
     fi
     PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
@@ -582,7 +578,7 @@ function arcSummary() {
   SUMMARY+="\n>> Disks (incl. USB): \Zb${DRIVES}\Zn"
   SUMMARY+="\n>> Disks (internal): \Zb${HARDDRIVES}\Zn"
   SUMMARY+="\n>> External Controller: \Zb${EXTERNALCONTROLLER}\Zn"
-  SUMMARY+="\n>> Memory Min/Max MB: \Zb${RAMMIN}/${RAMMAX}\Zn"
+  SUMMARY+="\n>> Memory: \Zb$((${RAMTOTAL} / 1024))GB\Zn"
   dialog --backtitle "$(backtitle)" --colors --title "DSM Config Summary" \
     --extra-button --extra-label "Cancel" --msgbox "${SUMMARY}" 0 0
   RET=$?
@@ -713,15 +709,15 @@ function make() {
       fi
     fi
   elif [ "${OFFLINE}" = "true" ]; then
-    if [ -f "${ORI_ZIMAGE_FILE}" ] && [ -f "${ORI_RDGZ_FILE}" ] && [ -f "${MOD_ZIMAGE_FILE}" ] && [ -f "${MOD_RDGZ_FILE}" ]; then
-      rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}"
+    if [ -f "${ORI_ZIMAGE_FILE}" ] && [ -f "${ORI_RDGZ_FILE}" ]; then
+      rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
       VALID=true
     else
       # Check for existing Files
       mkdir -p "${TMP_UP_PATH}"
       # Get new Files
       dialog --backtitle "$(backtitle)" --title "DSM Upload" --aspect 18 \
-      --msgbox "Upload your DSM .pat File now to /tmp/upload.\nUse SSH/SFTP to connect to ${IPCON}\nor use Webfilebrowser: ${IPCON}:7304.\nUser: root | Password: arc\nPress OK to continue!" 0 0
+      --msgbox "Upload your DSM .pat File now to /tmp/upload.\nUse Webfilebrowser: ${IPCON}:7304\nor SSH/SFTP to connect to ${IPCON}.\nUser: root | Password: arc\nPress OK to continue!" 0 0
       # Grep PAT_FILE
       PAT_FILE=$(ls ${TMP_UP_PATH}/*.pat | head -n 1)
       if [ -f "${PAT_FILE}" ] && [ $(wc -c "${PAT_FILE}" | awk '{print $1}') -gt 300000000 ]; then
