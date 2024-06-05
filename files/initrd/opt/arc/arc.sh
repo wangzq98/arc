@@ -57,6 +57,7 @@ LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
 if [ -n "${MODEL}" ]; then
   DT="$(readConfigKey "platforms.${PLATFORM}.dt" "${P_FILE}")"
   PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
+  ARCCONF="$(readConfigKey "${MODEL}.serial" "${S_FILE}" 2>/dev/null)"
 fi
 
 # Get Arc Data from Config
@@ -259,6 +260,11 @@ function arcModel() {
     writeConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.emmcboot" "false" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.hddsort" "false" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.kernel" "official" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.odp" "false" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.patch" "false" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.paturl" "" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.pathash" "" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.remap" "" "${USER_CONFIG_FILE}"
@@ -267,9 +273,17 @@ function arcModel() {
     writeConfigKey "modelid" "${MODELID}" "${USER_CONFIG_FILE}"
     writeConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
     writeConfigKey "platform" "${PLATFORM}" "${USER_CONFIG_FILE}"
+    writeConfigKey "productver" "" "${USER_CONFIG_FILE}"
+    writeConfigKey "ramdisk-hash" "" "${USER_CONFIG_FILE}"
     writeConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
-    CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
+    writeConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
+    ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+    CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
+    EMMCBOOT="$(readConfigKey "arc.emmcboot" "${USER_CONFIG_FILE}")"
+    HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
+    KERNEL="$(readConfigKey "arc.kernel" "${USER_CONFIG_FILE}")"
+    ODP="$(readConfigKey "arc.odp" "${USER_CONFIG_FILE}")"
     rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
   fi
   arcVersion
@@ -296,12 +310,9 @@ function arcVersion() {
     if [ "${PRODUCTVER}" != "${resp}" ]; then
       PRODUCTVER="${resp}"
       writeConfigKey "productver" "${PRODUCTVER}" "${USER_CONFIG_FILE}"
-      if [ -f "${ORI_ZIMAGE_FILE}" ] || [ -f "${ORI_RDGZ_FILE}" ] || [ -f "${MOD_ZIMAGE_FILE}" ] || [ -f "${MOD_RDGZ_FILE}" ]; then
-        # Delete old files
-        rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
-      fi
+      # Delete old files
+      rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
     fi
-    PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
   fi
   dialog --backtitle "$(backtitle)" --title "Arc Config" \
     --infobox "Reconfiguring Addons, Modules and Synoinfo" 3 50
@@ -334,7 +345,7 @@ function arcVersion() {
     # Build isn't done
     writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-    ONLYVERSION=""
+    ONLYVERSION="false"
     return 0
   else
     arcPatch
@@ -352,7 +363,6 @@ function arcPatch() {
   # Check for Custom Build
   if [ "${CUSTOM}" = "true" ]; then
     SN=$(generateSerial "${MODEL}" false)
-    writeConfigKey "arc.sn" "${SN}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.patch" "false" "${USER_CONFIG_FILE}"
   else
     if [ -n "${ARCCONF}" ]; then
@@ -392,7 +402,6 @@ function arcPatch() {
         done
         writeConfigKey "arc.patch" "user" "${USER_CONFIG_FILE}"
       fi
-      writeConfigKey "arc.sn" "${SN}" "${USER_CONFIG_FILE}"
     elif [ -z "${ARCCONF}" ]; then
       dialog --clear --backtitle "$(backtitle)" \
         --nocancel --title "Non Arc Patch Model" \
@@ -425,9 +434,9 @@ function arcPatch() {
         done
         writeConfigKey "arc.patch" "user" "${USER_CONFIG_FILE}"
       fi
-      writeConfigKey "arc.sn" "${SN}" "${USER_CONFIG_FILE}"
     fi
   fi
+  writeConfigKey "arc.sn" "${SN}" "${USER_CONFIG_FILE}"
   ARCPATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   arcSettings
 }
@@ -447,7 +456,7 @@ function arcSettings() {
     # Build isn't done
     writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
     BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-    ONLYPATCH=""
+    ONLYPATCH="false"
     return 0
   fi
   # Select Portmap for Loader
@@ -868,7 +877,9 @@ else
   [ "${BUILDDONE}" = "true" ] && NEXT="3" || NEXT="1"
   while true; do
     echo "= \"\Z4========== Main ==========\Zn \" "                                            >"${TMP_PATH}/menu"
-    echo "0 \"Decrypt Arc Patch \" "                                                          >>"${TMP_PATH}/menu"
+    if [ -z "${ARCCONF}" ]; then
+      echo "0 \"Decrypt Arc Patch \" "                                                        >>"${TMP_PATH}/menu"
+    fi
     echo "1 \"Choose Model \" "                                                               >>"${TMP_PATH}/menu"
     if [ "${CONFDONE}" = "true" ]; then
       echo "2 \"Build Loader \" "                                                             >>"${TMP_PATH}/menu"
@@ -893,8 +904,11 @@ else
         echo "e \"DSM Version \" "                                                            >>"${TMP_PATH}/menu"
         echo "S \"DSM Storage Map \" "                                                        >>"${TMP_PATH}/menu"
         echo "P \"DSM StoragePanel \" "                                                       >>"${TMP_PATH}/menu"
-        echo "p \"Arc Patch Settings \" "                                                     >>"${TMP_PATH}/menu"
+        if [ -n "${ARCCONF}" ]; then
+          echo "p \"Arc Patch Settings \" "                                                   >>"${TMP_PATH}/menu"
+        fi
         echo "D \"Loader DHCP/StaticIP \" "                                                   >>"${TMP_PATH}/menu"
+        echo "u \"Switch LKM version: \Z4${LKM}\Zn \" "                                       >>"${TMP_PATH}/menu"
         echo "R \"Automated Mode: \Z4${CUSTOM}\Zn \" "                                        >>"${TMP_PATH}/menu"
       fi
       if [ "${ADVOPTS}" = "true" ]; then
@@ -935,18 +949,17 @@ else
         echo "t \"Change DSM Password \" "                                                    >>"${TMP_PATH}/menu"
         echo "N \"Add DSM User \" "                                                           >>"${TMP_PATH}/menu"
         if [ "${PLATFORM}" = "epyc7002" ]; then
-          echo "K \"Kernel: \Z4${KERNEL}\Zn \" "                                              >>"${TMP_PATH}/menu"
+          echo "K \"DSM Kernel: \Z4${KERNEL}\Zn \" "                                          >>"${TMP_PATH}/menu"
         fi
         if [ "${DT}" = "true" ]; then
           echo "H \"Hotplug/SortDrives: \Z4${HDDSORT}\Zn \" "                                 >>"${TMP_PATH}/menu"
         fi
-        echo "c \"IPv6 Support: \Z4${ARCIPV6}\Zn \" "                                         >>"${TMP_PATH}/menu"
+        echo "c \"DSM IPv6 Support: \Z4${ARCIPV6}\Zn \" "                                     >>"${TMP_PATH}/menu"
         echo "O \"Official Driver Priority: \Z4${ODP}\Zn \" "                                 >>"${TMP_PATH}/menu"
         echo "E \"eMMC Boot Support: \Z4${EMMCBOOT}\Zn \" "                                   >>"${TMP_PATH}/menu"
-        echo "o \"Switch MacSys: \Z4${MACSYS}\Zn \" "                                         >>"${TMP_PATH}/menu"
+        echo "o \"DSM Switch MacSys: \Z4${MACSYS}\Zn \" "                                     >>"${TMP_PATH}/menu"
         echo "W \"DSM RD Compression: \Z4${RD_COMPRESSED}\Zn \" "                             >>"${TMP_PATH}/menu"
         echo "X \"DSM Sata DOM: \Z4${SATADOM}\Zn \" "                                         >>"${TMP_PATH}/menu"
-        echo "u \"Switch LKM version: \Z4${LKM}\Zn \" "                                       >>"${TMP_PATH}/menu"
       fi
     fi
     if [ "${DEVOPTS}" = "true" ]; then
