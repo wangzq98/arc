@@ -1,4 +1,4 @@
-[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../" >/dev/null 2>&1 && pwd)"
+[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../" 2>/dev/null && pwd)"
 
 . ${ARC_PATH}/include/consts.sh
 . ${ARC_PATH}/include/configFile.sh
@@ -31,7 +31,7 @@ function arrayExistItem() {
   ITEM="${1}"
   shift
   for i in "$@"; do
-    [ "${i}" = "${ITEM}" ] || continue
+    [ "${i}" == "${ITEM}" ] || continue
     EXISTS=0
     break
   done
@@ -74,7 +74,7 @@ function genRandomValue() {
 function generateSerial() {
   PREFIX="$(readConfigArray "${1}.prefix" "${S_FILE}" 2>/dev/null | sort -R | tail -1)"
   MIDDLE="$(readConfigArray "${1}.middle" "${S_FILE}" 2>/dev/null | sort -R | tail -1)"
-  if [ "${2}" = "true" ]; then
+  if [ "${2}" == "true" ]; then
     SUFFIX="arc"
   else
     SUFFIX="$(readConfigKey "${1}.suffix" "${S_FILE}" 2>/dev/null)"
@@ -105,7 +105,7 @@ function generateSerial() {
 # Returns serial number
 function generateMacAddress() {
   MACPRE="$(readConfigKey "${1}.macpre" "${S_FILE}")"
-  if [ "${3}" = "true" ]; then
+  if [ "${3}" == "true" ]; then
     MACSUF="$(readConfigKey "${1}.mac" "${S_FILE}" 2>/dev/null)"
   else
     MACSUF="$(printf '%02x%02x%02x' $((${RANDOM} % 256)) $((${RANDOM} % 256)) $((${RANDOM} % 256)))"
@@ -167,7 +167,7 @@ function arrayExistItem() {
   ITEM="${1}"
   shift
   for i in "$@"; do
-    [ "${i}" = "${ITEM}" ] || continue
+    [ "${i}" == "${ITEM}" ] || continue
     EXISTS=0
     break
   done
@@ -248,7 +248,7 @@ EOF
     [ ${IDX} -ge $(wc -l <${TMP_PATH}/ethlist) ] && break
     ETH=$(cat ${TMP_PATH}/ethlist | sed -n "$((${IDX} + 1))p" | awk '{print $3}')
     # echo "ETH: ${ETH}"
-    if [ -n "${ETH}" ] && [ ! "${ETH}" = "eth${IDX}" ]; then
+    if [ -n "${ETH}" ] && [ "${ETH}" != "eth${IDX}" ]; then
       # echo "change ${ETH} <=> eth${IDX}"
       ip link set dev eth${IDX} down
       ip link set dev ${ETH} down
@@ -407,7 +407,7 @@ function extractDSMFiles() {
     echo -e "Could not determine if pat file is encrypted or not, maybe corrupted, try again!"
     ;;
   esac
-  if [ "${isencrypted}" = "yes" ]; then
+  if [ "${isencrypted}" == "yes" ]; then
     # Uses the extractor to untar PAT file
     LD_LIBRARY_PATH="${EXTRACTOR_PATH}" "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_PATH}" "${EXT_PATH}" >"${LOG_FILE}" 2>&1
   else
@@ -435,7 +435,7 @@ function livepatch() {
     echo -e " - failed!"
     PVALID=false
   fi
-  if [ "${PVALID}" = "true" ]; then
+  if [ "${PVALID}" == "true" ]; then
     # Patch Ramdisk
     echo -n "Patching Ramdisk"
     if ${ARC_PATH}/ramdisk-patch.sh; then
@@ -446,12 +446,9 @@ function livepatch() {
       PVALID=false
     fi
   fi
-  if [ "${PVALID}" = "false" ]; then
+  if [ "${PVALID}" == "false" ]; then
     OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
-    if [ "${OFFLINE}" = "false" ]; then
-      # Update Configs
-      echo -e "Updating Configs..."
-      updateConfigs
+    if [ "${OFFLINE}" == "false" ]; then
       # Update Patches
       echo -e "Updating Patches..."
       updatePatches
@@ -464,7 +461,7 @@ function livepatch() {
         echo -e " - failed!"
         PVALID=false
       fi
-      if [ "${PVALID}" = "true" ]; then
+      if [ "${PVALID}" == "true" ]; then
         # Patch Ramdisk
         echo -n "Patching Ramdisk"
         if ${ARC_PATH}/ramdisk-patch.sh; then
@@ -477,7 +474,7 @@ function livepatch() {
       fi
     fi
   fi
-  if [ "${PVALID}" = "false" ]; then
+  if [ "${PVALID}" == "false" ]; then
     echo
     echo -e "Patching DSM Files failed! Please stay patient for Update."
     sleep 5
@@ -488,19 +485,5 @@ function livepatch() {
     RAMDISK_HASH="$(sha256sum "${ORI_RDGZ_FILE}" | awk '{print $1}')"
     writeConfigKey "ramdisk-hash" "${RAMDISK_HASH}" "${USER_CONFIG_FILE}"
     echo "DSM Image patched - Ready!"
-  fi
-}
-
-###############################################################################
-# Timeserver
-function ntptime() {
-  OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
-  if [ "${OFFLINE}" = "false" ]; then
-    # Timezone
-    REGION="$(curl -v http://ip-api.com/line?fields=timezone 2>/dev/null | tr -d '\n' | cut -d '/' -f1)"
-    TIMEZONE="$(curl -v http://ip-api.com/line?fields=timezone 2>/dev/null | tr -d '\n' | cut -d '/' -f2)"
-    ln -fs /usr/share/zoneinfo/${REGION}/${TIMEZONE} /etc/localtime
-    /etc/init.d/S49ntp restart 2&>1 >/dev/null || true
-    hwclock -w 2>/dev/null || true
   fi
 }

@@ -43,13 +43,13 @@ CUSTOM="${readConfigKey "arc.custom" "${USER_CONFIG_FILE}"}"
 ###############################################################################
 # Mounts backtitle dynamically
 function backtitle() {
-  if [ ! -n "${MODEL}" ]; then
+  if [ -z "${MODEL}" ]; then
     MODEL="(Model)"
   fi
-  if [ ! -n "${PRODUCTVER}" ]; then
+  if [ -z "${PRODUCTVER}" ]; then
     PRODUCTVER="(Version)"
   fi
-  if [ ! -n "${IPCON}" ]; then
+  if [ -z "${IPCON}" ]; then
     IPCON="(IP)"
   fi
   BACKTITLE="${ARC_TITLE} | "
@@ -78,7 +78,7 @@ function arcUpdate() {
     --infobox "Update successful!" 0 0
   writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-  if [ "${CUSTOM}" = "true" ] && [ ! -f "${PART3_PATH}/automated" ]; then
+  if [ "${CUSTOM}" == "true" ] && [ ! -f "${PART3_PATH}/automated" ]; then
     echo "${ARC_VERSION}-${MODEL}-{PRODUCTVER}-custom" >"${PART3_PATH}/automated"
   fi
   boot
@@ -87,7 +87,7 @@ function arcUpdate() {
 ###############################################################################
 # Calls boot.sh to boot into DSM kernel/ramdisk
 function boot() {
-  if [ "${CUSTOM}" = "true" ]; then
+  if [ "${CUSTOM}" == "true" ]; then
     dialog --backtitle "$(backtitle)" --title "Arc Boot" \
       --infobox "Rebooting to automated Build Mode...\nPlease stay patient!" 4 30
     sleep 3
@@ -103,7 +103,7 @@ function boot() {
 ###############################################################################
 ###############################################################################
 # Main loop
-if [ "${OFFLINE}" = "false" ]; then
+if [ "${OFFLINE}" == "false" ]; then
   arcUpdate
 else
   dialog --backtitle "$(backtitle)" --title "Upgrade Loader" --aspect 18 \

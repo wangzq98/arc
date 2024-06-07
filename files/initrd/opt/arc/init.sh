@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
-[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
 . ${ARC_PATH}/include/functions.sh
 
@@ -77,6 +77,7 @@ initConfigKey "rd-compressed" "false" "${USER_CONFIG_FILE}"
 initConfigKey "satadom" "2" "${USER_CONFIG_FILE}"
 initConfigKey "static" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "synoinfo" "{}" "${USER_CONFIG_FILE}"
+initConfigKey "time" "{}" "${USER_CONFIG_FILE}"
 initConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
 
 # Init Network
@@ -90,9 +91,9 @@ for ETH in ${ETHX}; do
     MACR="000000000000"
   fi
   initConfigKey "mac.${ETH}" "${MACR}" "${USER_CONFIG_FILE}"
-  if [ "${MACSYS}" = "custom" ]; then
+  if [ "${MACSYS}" == "custom" ]; then
     MACA="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
-    if [ ! "${MACA}" = "${MACR}" ]; then
+    if [ "${MACA}" != "${MACR}" ]; then
       MAC="${MACA:0:2}:${MACA:2:2}:${MACA:4:2}:${MACA:6:2}:${MACA:8:2}:${MACA:10:2}"
       echo "Setting ${ETH} MAC to ${MAC}"
       ip link set dev ${ETH} address "${MAC}" >/dev/null 2>&1 || true
@@ -115,7 +116,7 @@ VID="0x46f4"
 PID="0x0001"
 
 BUSLIST="usb sata scsi nvme mmc"
-if [ "${BUS}" = "usb" ]; then
+if [ "${BUS}" == "usb" ]; then
   VID="0x$(udevadm info --query property --name "${LOADER_DISK}" | grep ID_VENDOR_ID | cut -d= -f2)"
   PID="0x$(udevadm info --query property --name "${LOADER_DISK}" | grep ID_MODEL_ID | cut -d= -f2)"
 elif ! echo "${BUSLIST}" | grep -wq "${BUS}"; then
@@ -151,7 +152,7 @@ elif grep -q "automated_arc" /proc/cmdline; then
   echo -e "\033[1;34mStarting automated Build Mode...\033[0m"
 elif grep -q "update_arc" /proc/cmdline; then
   echo -e "\033[1;34mStarting Update Mode...\033[0m"
-elif [ "${BUILDDONE}" = "true" ]; then
+elif [ "${BUILDDONE}" == "true" ]; then
   echo -e "\033[1;34mStarting DSM Mode...\033[0m"
   boot.sh && exit 0
 else
@@ -170,7 +171,7 @@ for ETH in ${ETHX}; do
   COUNT=0
   while true; do
     ARCIP="$(readConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}")"
-    if [ "${STATICIP}" = "true" ] && [ -n "${ARCIP}" ]; then
+    if [ "${STATICIP}" == "true" ] && [ -n "${ARCIP}" ]; then
       NETMASK="$(readConfigKey "netmask.${ETH}" "${USER_CONFIG_FILE}")"
       GATEWAY="$(readConfigKey "gateway.${ETH}" "${USER_CONFIG_FILE}")"
       NAMESERVER="$(readConfigKey "nameserver.${ETH}" "${USER_CONFIG_FILE}")"
@@ -186,6 +187,10 @@ for ETH in ${ETHX}; do
       writeConfigKey "static.${ETH}" "false" "${USER_CONFIG_FILE}"
       MSG="DHCP"
     fi
+    if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
+      echo -e "\r\033[1;37m${DRIVER}:\033[0m NOT CONNECTED"
+      break
+    fi
     if [ -n "${IP}" ]; then
       SPEED="$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')"
       writeConfigKey "ip.${ETH}" "${IP}" "${USER_CONFIG_FILE}"
@@ -193,22 +198,15 @@ for ETH in ${ETHX}; do
         echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
       else
         echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:7681\033[0m to connect to Arc via web."
-        [ -z "${ARCNIC}" ] && writeConfigKey "arc.nic" "${ETH}" "${USER_CONFIG_FILE}"
       fi
       ethtool -s ${ETH} wol g 2>/dev/null
       break
     fi
     if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
       echo -e echo -e "\r\033[1;37m${DRIVER}:\033[0m TIMEOUT"
-      deleteConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}"
       break
     fi
     sleep 3
-    if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
-      echo -e "\r\033[1;37m${DRIVER}:\033[0m NOT CONNECTED"
-      deleteConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}"
-      break
-    fi
     COUNT=$((${COUNT} + 3))
   done
 done

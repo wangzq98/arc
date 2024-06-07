@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
 . ${ARC_PATH}/include/functions.sh
 
@@ -12,13 +12,13 @@ set -o pipefail # Get exit code from process piped
 rm -f "${MOD_ZIMAGE_FILE}"
 
 KERNEL="$(readConfigKey "arc.kernel" "${USER_CONFIG_FILE}")"
-if [ "${KERNEL}" = "custom" ]; then
+if [ "${KERNEL}" == "custom" ]; then
   echo -n " - Using customized Kernel"
   PLATFORM="$(readConfigKey "platform" "${USER_CONFIG_FILE}")"
   PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
   KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.[${PRODUCTVER}].kver" "${P_FILE}")"
   # Modify KVER for Epyc7002
-  if [ "${PLATFORM}" = "epyc7002" ]; then
+  if [ "${PLATFORM}" == "epyc7002" ]; then
     KVERP="${PRODUCTVER}-${KVER}"
   else
     KVERP="${KVER}"

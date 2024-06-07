@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+[[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
 . ${ARC_PATH}/include/functions.sh
 . ${ARC_PATH}/include/addons.sh
@@ -41,8 +41,8 @@ PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
 PAT_URL="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
 PAT_HASH="$(readConfigKey "arc.pathash" "${USER_CONFIG_FILE}")"
 
-[ "${PATURL:0:1}" = "#" ] && PATURL=""
-[ "${PATSUM:0:1}" = "#" ] && PATSUM=""
+[ "${PATURL:0:1}" == "#" ] && PATURL=""
+[ "${PATSUM:0:1}" == "#" ] && PATSUM=""
 
 # Check if DSM Version changed
 . "${RAMDISK_PATH}/etc/VERSION"
@@ -62,7 +62,7 @@ fi
 KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.[${PRODUCTVER}].kver" "${P_FILE}")"
 
 # Modify KVER for Epyc7002
-if [ "${PLATFORM}" = "epyc7002" ]; then
+if [ "${PLATFORM}" == "epyc7002" ]; then
   KVERP="${PRODUCTVER}-${KVER}"
 else
   KVERP="${KVER}"
@@ -164,7 +164,7 @@ chmod +x "${RAMDISK_PATH}/addons/addons.sh"
 # System Addons
 for ADDON in "redpill" "revert" "misc" "eudev" "disks" "localrss" "notify" "updatenotify" "wol"; do
   PARAMS=""
-  if [ "${ADDON}" = "disks" ]; then
+  if [ "${ADDON}" == "disks" ]; then
     PARAMS=${HDDSORT}
     [ -f "${USER_UP_PATH}/${MODEL}.dts" ] && cp -f "${USER_UP_PATH}/${MODEL}.dts" "${RAMDISK_PATH}/addons/model.dts"
   fi
@@ -206,7 +206,7 @@ echo "inetd" >>"${RAMDISK_PATH}/addons/addons.sh"
 
 echo "Modify files" >"${LOG_FILE}"
 # Remove function from scripts
-[ "2" = "${BUILDNUM:0:1}" ] && sed -i 's/function //g' $(find "${RAMDISK_PATH}/addons/" -type f -name "*.sh")
+[ "2" == "${BUILDNUM:0:1}" ] && sed -i 's/function //g' $(find "${RAMDISK_PATH}/addons/" -type f -name "*.sh")
 
 # Build modules dependencies
 # ${ARC_PATH}/depmod -a -b ${RAMDISK_PATH} 2>/dev/null
@@ -242,7 +242,7 @@ done
 IPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
 ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
 for ETH in ${ETHX}; do
-  if [ "${IPV6}" = "true" ]; then
+  if [ "${IPV6}" == "true" ]; then
     echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
   else
     echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=no" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
@@ -250,14 +250,14 @@ for ETH in ${ETHX}; do
 done
 
 # SA6400 patches
-if [ "${PLATFORM}" = "epyc7002" ]; then
+if [ "${PLATFORM}" == "epyc7002" ]; then
   echo -n " - Apply Epyc7002 Fixes"
   sed -i 's#/dev/console#/var/log/lrc#g' ${RAMDISK_PATH}/usr/bin/busybox
   sed -i '/^echo "START/a \\nmknod -m 0666 /dev/console c 1 3' ${RAMDISK_PATH}/linuxrc.syno
 fi
 
 # Broadwellntbap patches
-if [ "${PLATFORM}" = "broadwellntbap" ]; then
+if [ "${PLATFORM}" == "broadwellntbap" ]; then
   echo -n " - Apply Broadwellntbap Fixes"
   sed -i 's/IsUCOrXA="yes"/XIsUCOrXA="yes"/g; s/IsUCOrXA=yes/XIsUCOrXA=yes/g' ${RAMDISK_PATH}/usr/syno/share/environments.sh
 fi
