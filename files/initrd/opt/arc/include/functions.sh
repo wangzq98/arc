@@ -212,7 +212,7 @@ function _sort_netif() {
   ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) # real network cards list
   for ETH in ${ETHX}; do
     MAC="$(cat /sys/class/net/${ETH}/address 2>/dev/null | sed 's/://g' | tr '[:upper:]' '[:lower:]')"
-    BUS=$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | awk '{print $2}')
+    ETHBUS=$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | awk '{print $2}')
     ETHLIST="${ETHLIST}${BUS} ${MAC} ${ETH}\n"
   done
 
@@ -225,10 +225,10 @@ function _sort_netif() {
       ETHLISTTMPC="${ETHLISTTMPC}$(echo -e "${ETHLIST}" | grep "${MACX}")\n"
     done
 
-    while read -r BUS MAC ETH; do
+    while read -r ETHBUS MAC ETH; do
       [ -z "${MAC}" ] && continue
       if echo "${MACS}" | grep -q "${MAC}"; then continue; fi
-      ETHLISTTMPF="${ETHLISTTMPF}${BUS} ${MAC} ${ETH}\n"
+      ETHLISTTMPF="${ETHLISTTMPF}${ETHBUS} ${MAC} ${ETH}\n"
     done <<EOF
 $(echo -e ${ETHLIST} | sort)
 EOF
@@ -349,12 +349,10 @@ function rebootTo() {
   MODES="config recovery junior automated update"
   [ -z "${1}" ] && exit 1
   if ! echo "${MODES}" | grep -qw "${1}"; then exit 1; fi
-  # echo "Rebooting to ${1} mode"
-  GRUBPATH="$(dirname $(find ${BOOTLOADER_PATH}/ -name grub.cfg | head -1))"
-  ENVFILE="${GRUBPATH}/grubenv"
-  [ ! -f "${ENVFILE}" ] && grub-editenv ${ENVFILE} create
-  grub-editenv ${ENVFILE} set next_entry="${1}"
-  reboot
+  [ ! -f "${USER_GRUBENVFILE}" ] && grub-editenv ${USER_GRUBENVFILE} create
+  echo -e "Rebooting to ${1} mode..."
+  grub-editenv ${USER_GRUBENVFILE} set next_entry="${1}"
+  exec reboot
 }
 
 ###############################################################################
@@ -449,6 +447,8 @@ function livepatch() {
   if [ "${PVALID}" == "false" ]; then
     OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
     if [ "${OFFLINE}" == "false" ]; then
+      # Load update functions
+      . ${ARC_PATH}/include/update.sh
       # Update Patches
       echo -e "Updating Patches..."
       updatePatches

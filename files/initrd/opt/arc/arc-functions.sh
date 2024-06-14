@@ -962,9 +962,8 @@ function sysinfo() {
   # Check if machine has EFI
   [ -d /sys/firmware/efi ] && BOOTSYS="UEFI" || BOOTSYS="BIOS"
   # Get System Informations
-  DATE="$(date)"
-  CPU="$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))"
-  VENDOR="$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')"
+  CPU=$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))
+  VENDOR=$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')
   ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
   NIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
@@ -999,53 +998,53 @@ function sysinfo() {
   EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
   HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
   DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
-  MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
-  MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
-  ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
-  LKMVERSION="$(cat "${LKM_PATH}/VERSION")"
-  CONFIGSVERSION="$(cat "${MODEL_CONFIG_PATH}/VERSION")"
-  PATCHESVERSION="$(cat "${PATCH_PATH}/VERSION")"
+  MODULESINFO=$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')
+  MODULESVERSION=$(cat "${MODULES_PATH}/VERSION")
+  ADDONSVERSION=$(cat "${ADDONS_PATH}/VERSION")
+  LKMVERSION=$(cat "${LKMS_PATH}/VERSION")
+  CONFIGSVERSION=$(cat "${MODEL_CONFIG_PATH}/VERSION")
+  PATCHESVERSION=$(cat "${PATCH_PATH}/VERSION")
   TEXT=""
   # Print System Informations
   TEXT+="\n\Z4> System: ${MACHINE} | ${BOOTSYS}\Zn"
   TEXT+="\n  Vendor: \Zb${VENDOR}\Zn"
   TEXT+="\n  CPU: \Zb${CPU}\Zn"
   TEXT+="\n  Memory: \Zb$((${RAMTOTAL}))GB\Zn"
-  TEXT+="\n  Date: \Zb${DATE}\Zn"
+  TEXT+="\n  Date: \Zb$(date)\Zn"
   TEXT+="\n"
   TEXT+="\n\Z4> Network: ${NIC} NIC\Zn"
   for ETH in ${ETHX}; do
     IP=""
     STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
-    DRIVER="$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
-    NETBUS="$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | cut -d' ' -f2)"
+    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
+    NETBUS=$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | cut -d' ' -f2)
     MAC="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
-    MACR="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
+    MACR=$(cat /sys/class/net/${ETH}/address | sed 's/://g')
     COUNT=0
     while true; do
       if [ "${STATICIP}" == "true" ]; then
         IP="$(readConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}")"
         MSG="STATIC"
       else
-        IP="$(getIP ${ETH})"
+        IP=$(getIP ${ETH})
         MSG="DHCP"
       fi
       if [ -n "${IP}" ]; then
         SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         if [[ "${IP}" =~ ^169\.254\..* ]]; then
-          TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}):\Zb LINK LOCAL | Mac: ${MACR} (${MAC})\Zn"
+          TEXT+="\n  ${ETH} -> ${DRIVER} (${SPEED} | ${MSG}):\Zb LINK LOCAL | Mac: ${MACR} (${MAC})\Zn"
         else
-          TEXT+="\n  ${DRIVER} (${SPEED} | ${MSG}):\Zb ${IP} | Mac: ${MACR} (${MAC})\Zn"
+          TEXT+="\n  ${ETH} -> ${DRIVER} (${SPEED} | ${MSG}):\Zb ${IP} | Mac: ${MACR} (${MAC})\Zn"
         fi
         break
       fi
       if [ ${COUNT} -gt 3 ]; then
-        TEXT+="\n  ${DRIVER} \ZbIP: TIMEOUT | MAC: ${MACR} (${MAC})\Zn"
+        TEXT+="\n  ${ETH} -> ${DRIVER}\Zb: TIMEOUT | MAC: ${MACR} (${MAC})\Zn"
         break
       fi
       sleep 3
       if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
-        TEXT+="\n  ${DRIVER} \ZbIP: NOT CONNECTED | MAC: ${MACR} (${MAC})\Zn"
+        TEXT+="\n  ${ETH} -> ${DRIVER}\Zb: NOT CONNECTED | MAC: ${MACR} (${MAC})\Zn"
         break
       fi
       COUNT=$((${COUNT} + 3))
@@ -1059,13 +1058,14 @@ function sysinfo() {
   TEXT+="\n\Z4>> Loader\Zn"
   TEXT+="\n   Config | Build: \Zb${CONFDONE} | ${BUILDDONE}\Zn"
   TEXT+="\n   Config Version: \Zb${CONFIGVER}\Zn"
-  TEXT+="\n\Z4>> DSM ${PRODUCTVER}: ${MODELID:-${MODEL}}\Zn"
-  TEXT+="\n   Kernel | LKM: \Zb${KVER} | ${LKM}\Zn"
-  TEXT+="\n   Platform | DeviceTree: \Zb${PLATFORM} | ${DT}\Zn"
-  TEXT+="\n   Arc Patch | Kernelload: \Zb${ARCPATCH} | ${KERNELLOAD}\Zn"
-  TEXT+="\n   Directboot: \Zb${DIRECTBOOT}\Zn"
-  TEXT+="\n\Z4>> Addons | Modules\Zn"
-  TEXT+="\n   Addons selected: \Zb${ADDONSINFO}\Zn"
+  if [ "${CONFDONE}" == "true" ]; then
+    TEXT+="\n\Z4>> DSM ${PRODUCTVER}: ${MODELID:-${MODEL}}\Zn"
+    TEXT+="\n   Kernel | LKM: \Zb${KVER} | ${LKM}\Zn"
+    TEXT+="\n   Platform | DeviceTree: \Zb${PLATFORM} | ${DT}\Zn"
+    TEXT+="\n   Arc Patch | Kernelload: \Zb${ARCPATCH} | ${KERNELLOAD}\Zn"
+    TEXT+="\n   Directboot: \Zb${DIRECTBOOT}\Zn"
+    TEXT+="\n   Addons selected: \Zb${ADDONSINFO}\Zn"
+  fi
   TEXT+="\n   Modules loaded: \Zb${MODULESINFO}\Zn"
   TEXT+="\n\Z4>> Settings\Zn"
   TEXT+="\n   MacSys: \Zb${MACSYS}\Zn"
@@ -1198,9 +1198,8 @@ function fullsysinfo() {
   # Check if machine has EFI
   [ -d /sys/firmware/efi ] && BOOTSYS="UEFI" || BOOTSYS="BIOS"
   # Get System Informations
-  DATE="$(date)"
-  CPU="$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))"
-  VENDOR="$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')"
+  CPU=$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))
+  VENDOR=$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')
   ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
   NIC="$(readConfigKey "device.nic" "${USER_CONFIG_FILE}")"
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
@@ -1235,53 +1234,53 @@ function fullsysinfo() {
   EXTERNALCONTROLLER="$(readConfigKey "device.externalcontroller" "${USER_CONFIG_FILE}")"
   HARDDRIVES="$(readConfigKey "device.harddrives" "${USER_CONFIG_FILE}")"
   DRIVES="$(readConfigKey "device.drives" "${USER_CONFIG_FILE}")"
-  MODULESINFO="$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')"
-  MODULESVERSION="$(cat "${MODULES_PATH}/VERSION")"
-  ADDONSVERSION="$(cat "${ADDONS_PATH}/VERSION")"
-  LKMVERSION="$(cat "${LKM_PATH}/VERSION")"
-  CONFIGSVERSION="$(cat "${MODEL_CONFIG_PATH}/VERSION")"
-  PATCHESVERSION="$(cat "${PATCH_PATH}/VERSION")"
+  MODULESINFO=$(lsmod | awk -F' ' '{print $1}' | grep -v 'Module')
+  MODULESVERSION=$(cat "${MODULES_PATH}/VERSION")
+  ADDONSVERSION=$(cat "${ADDONS_PATH}/VERSION")
+  LKMVERSION=$(cat "${LKMS_PATH}/VERSION")
+  CONFIGSVERSION=$(cat "${MODEL_CONFIG_PATH}/VERSION")
+  PATCHESVERSION=$(cat "${PATCH_PATH}/VERSION")
   TEXT=""
   # Print System Informations
   TEXT+="\nSystem: ${MACHINE} | ${BOOTSYS}"
   TEXT+="\nVendor: ${VENDOR}"
   TEXT+="\nCPU: ${CPU}"
   TEXT+="\nMemory: ${RAMTOTAL}GB"
-  TEXT+="\nDate: ${DATE}"
+  TEXT+="\nDate: $(date)"
   TEXT+="\n"
   TEXT+="\nNetwork: ${NIC} NIC"
   for ETH in ${ETHX}; do
     IP=""
     STATICIP="$(readConfigKey "static.${ETH}" "${USER_CONFIG_FILE}")"
-    DRIVER="$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
-    NETBUS="$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | cut -d' ' -f2)"
+    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
+    NETBUS=$(ethtool -i ${ETH} 2>/dev/null | grep bus-info | cut -d' ' -f2)
     MAC="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
-    MACR="$(cat /sys/class/net/${ETH}/address | sed 's/://g')"
+    MACR=$(cat /sys/class/net/${ETH}/address | sed 's/://g')
     COUNT=0
     while true; do
       if [ "${STATICIP}" == "true" ]; then
         IP="$(readConfigKey "ip.${ETH}" "${USER_CONFIG_FILE}")"
         MSG="STATIC"
       else
-        IP="$(getIP ${ETH})"
+        IP=$(getIP ${ETH})
         MSG="DHCP"
       fi
       if [ -n "${IP}" ]; then
         SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         if [[ "${IP}" =~ ^169\.254\..* ]]; then
-          TEXT+="\n${DRIVER} (${SPEED} | ${MSG}): LINK LOCAL | Mac: ${MACR} (${MAC}) @ ${NETBUS}"
+          TEXT+="\n${ETH} -> ${DRIVER} (${SPEED} | ${MSG}): LINK LOCAL | Mac: ${MACR} (${MAC}) @ ${NETBUS}"
         else
-          TEXT+="\n${DRIVER} (${SPEED} | ${MSG}): ${IP} | Mac: ${MACR} (${MAC}) @ ${NETBUS}"
+          TEXT+="\n${ETH} -> ${DRIVER} (${SPEED} | ${MSG}): ${IP} | Mac: ${MACR} (${MAC}) @ ${NETBUS}"
         fi
         break
       fi
       if [ ${COUNT} -gt 3 ]; then
-        TEXT+="\n${DRIVER} IP: TIMEOUT | MAC: ${MACR} (${MAC}) @ ${NETBUS}"
+        TEXT+="\n${ETH} -> ${DRIVER}: TIMEOUT | MAC: ${MACR} (${MAC}) @ ${NETBUS}"
         break
       fi
       sleep 3
       if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
-        TEXT+="\n${DRIVER} IP: NOT CONNECTED | MAC: ${MACR} (${MAC}) @ ${NETBUS}"
+        TEXT+="\n${ETH} -> ${DRIVER}: NOT CONNECTED | MAC: ${MACR} (${MAC}) @ ${NETBUS}"
         break
       fi
       COUNT=$((${COUNT} + 3))
@@ -1299,16 +1298,18 @@ function fullsysinfo() {
   TEXT+="\nLoader"
   TEXT+="\nConfig | Build: ${CONFDONE} | ${BUILDDONE}"
   TEXT+="\nConfig Version: ${CONFIGVER}"
-  TEXT+="\n"
-  TEXT+="\nDSM ${PRODUCTVER}: ${MODELID:-${MODEL}}"
-  TEXT+="\nKernel | LKM: ${KVER} | ${LKM}"
-  TEXT+="\nPlatform | DeviceTree: ${PLATFORM} | ${DT}"
-  TEXT+="\nArc Patch | Kernelload: ${ARCPATCH} | ${KERNELLOAD}"
-  TEXT+="\nDirectboot: ${DIRECTBOOT}"
-  TEXT+="\n"
-  TEXT+="\nAddons selected:"
-  TEXT+="\n${ADDONSINFO}"
-  TEXT+="\n"
+  if [ "${CONFDONE}" == "true" ]; then
+    TEXT+="\n"
+    TEXT+="\nDSM ${PRODUCTVER}: ${MODELID:-${MODEL}}"
+    TEXT+="\nKernel | LKM: ${KVER} | ${LKM}"
+    TEXT+="\nPlatform | DeviceTree: ${PLATFORM} | ${DT}"
+    TEXT+="\nArc Patch | Kernelload: ${ARCPATCH} | ${KERNELLOAD}"
+    TEXT+="\nDirectboot: ${DIRECTBOOT}"
+    TEXT+="\n"
+    TEXT+="\nAddons selected:"
+    TEXT+="\n${ADDONSINFO}"
+    TEXT+="\n"
+  fi
   TEXT+="\nModules loaded:"
   TEXT+="\n${MODULESINFO}"
   TEXT+="\n"
@@ -1443,47 +1444,55 @@ function fullsysinfo() {
 ###############################################################################
 # Shows Networkdiag to user
 function networkdiag() {
-  MSG=""
-  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
+  (
+  ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) # real network cards list
   for ETH in ${ETHX}; do
-    MSG+="Interface: ${ETH}\n"
+    echo
+    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
+    echo -e "Interface: ${ETH} (${DRIVER})"
+    if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
+      echo -e "Link: NOT CONNECTED"
+      continue
+    fi
+    echo -e "Link: CONNECTED"
     addr=$(getIP ${ETH})
     netmask=$(ifconfig ${ETH} | grep inet | grep 255 | awk '{print $4}' | cut -f2 -d':')
-    MSG+="IP Address: ${addr}\n"
-    MSG+="Netmask: ${netmask}\n"
-    MSG+="\n"
-  done
-  gateway=$(route -n | grep 'UG[ \t]' | awk '{print $2}' | head -n 1)
-  MSG+="Gateway: ${gateway}\n"
-  dnsserver="$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}')"
-  MSG+="DNS Server: ${dnsserver}\n"
-  MSG+="\n"
-  websites=("google.com" "github.com" "auxxxilium.tech")
-  for website in "${websites[@]}"; do
-    if ping -c 1 "${website}" &> /dev/null; then
-      MSG+="Connection to ${website} is successful.\n"
-    else
-      MSG+="Connection to ${website} failed.\n"
-    fi
-  done
-  if [ "${CONFDONE}" == "true" ]; then
-    GITHUBAPI="$(curl --insecure -s https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')"
+    echo -e "IP Address: ${addr}"
+    echo -e "Netmask: ${netmask}"
+    echo
+    gateway=$(route -n | grep 'UG[ \t]' | awk '{print $2}' | head -n 1)
+    echo -e "Gateway: ${gateway}"
+    dnsserver=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}')
+    echo -e "DNS Server:\n${dnsserver}"
+    echo
+    websites=("google.com" "github.com" "auxxxilium.tech")
+    for website in "${websites[@]}"; do
+      if ping -I ${ETH} -c 1 "${website}" &> /dev/null; then
+        echo -e "Connection to ${website} is successful."
+      else
+        echo -e "Connection to ${website} failed."
+      fi
+    done
+    echo
+    GITHUBAPI=$(curl --interface ${ETH} -m 3 -skL https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}')
     if [[ $? -ne 0 || -z "${GITHUBAPI}" ]]; then
-      MSG+="\nGithub API not reachable!"
+      echo -e "Github API not reachable!"
     else
-      MSG+="\nGithub API reachable!"
+      echo -e "Github API reachable!"
     fi
-    SYNOAPI="$(curl -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')"
-    if [[ $? -ne 0 || -z "${SYNOAPI}" ]]; then
-      MSG+="\nSyno API not reachable!"
+    if [ "${CONFDONE}" == "true" ]; then
+      SYNOAPI=$(curl --interface ${ETH} -m 3 -skL "https://www.synology.com/api/support/findDownloadInfo?lang=en-us&product=${MODEL/+/%2B}&major=${PRODUCTVER%%.*}&minor=${PRODUCTVER##*.}" | jq -r '.info.system.detail[0].items[0].files[0].url')
+      if [[ $? -ne 0 || -z "${SYNOAPI}" ]]; then
+        echo -e "Syno API not reachable!"
+      else
+        echo -e "Syno API reachable!"
+      fi
     else
-      MSG+="\nSyno API reachable!"
+      echo -e "For Syno API Checks you need to configure Loader first!"
     fi
-  else
-    MSG+="\nFor API Checks you need to configure Loader first!"
-  fi
-  dialog --backtitle "$(backtitle)" --colors --title "Networkdiag" \
-    --msgbox "${MSG}" 0 0
+  done
+  ) 2>&1 | dialog --backtitle "$(backtitle)" --colors --title "Networkdiag" \
+    --programbox "Doing the some Diagnostics..." 50 120
   return
 }
 
@@ -1586,10 +1595,12 @@ function staticIPMenu() {
       writeConfigKey "nameserver.${ETH}" "${NAMESERVER}" "${USER_CONFIG_FILE}"
       writeConfigKey "static.${ETH}" "true" "${USER_CONFIG_FILE}"
       #NETMASK=$(convert_netmask "${NETMASK}")
-      ip addr add ${IP}/${NETMASK} dev ${ETH}
+      /etc/init.d/S41dhcpcd stop >/dev/null 2>&1 || true
+      ip addr add ${IPADDR}/${NETMASK} dev ${ETH}
       ip route add default via ${GATEWAY} dev ${ETH}
       echo "nameserver ${NAMESERVER}" >>/etc/resolv.conf.head
       /etc/init.d/S40network restart
+      IP="${IPADDR}"
     fi
   done
   dialog --backtitle "$(backtitle)" --title "DHCP/StaticIP" \
@@ -1978,9 +1989,9 @@ function resetLoader() {
 function editGrubCfg() {
   while true; do
     dialog --backtitle "$(backtitle)" --title "Edit with caution" \
-      --ok-label "Save" --editbox "${GRUB_PATH}/grub.cfg" 0 0 2>"${TMP_PATH}/usergrub.cfg"
+      --ok-label "Save" --editbox "${USER_GRUB_CONFIG}" 0 0 2>"${TMP_PATH}/usergrub.cfg"
     [ $? -ne 0 ] && return
-    mv -f "${TMP_PATH}/usergrub.cfg" "${GRUB_PATH}/grub.cfg"
+    mv -f "${TMP_PATH}/usergrub.cfg" "${USER_GRUB_CONFIG}"
     break
   done
   return

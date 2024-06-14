@@ -15,7 +15,7 @@
 [ -z "${LOADER_DISK}" ] && die "Loader Disk not found!"
 
 # Memory: Check Memory installed
-RAMTOTAL=$(($(awk '/MemTotal:/ {printf "%.0f", $2 / 1024 / 1024}' /proc/meminfo 2>/dev/null) + 1))
+RAMTOTAL=$(awk '/MemTotal:/ {printf "%.0f", $2 / 1024 / 1024}' /proc/meminfo 2>/dev/null)
 [ -z "${RAMTOTAL}" ] && RAMTOTAL=8
 
 # Check for Hypervisor
@@ -31,9 +31,9 @@ BUS=$(getBus "${LOADER_DISK}")
 
 # Offline Mode check
 CUSTOM="$(readConfigKey "arc.custom" "${USER_CONFIG_FILE}")"
-ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
+ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) # real network cards list
 for ETH in ${ETHX}; do
-  if ping -I ${ETH} -c 1 "github.com" > /dev/null 2>&1; then
+  if curl --interface ${ETH} -m 5 -skL https://api.github.com/repos/AuxXxilium/arc/releases/latest | grep "tag_name" | awk '{print substr($2, 2, length($2)-3)}' > /dev/null 2>&1; then
     ARCNIC=${ETH}
     break
   fi
@@ -482,7 +482,6 @@ function arcSettings() {
     return 0
   fi
   # Select Portmap for Loader
-  getmap
   if [ "${DT}" == "false" ] && [ $(lspci -d ::106 | wc -l) -gt 0 ]; then
     dialog --backtitle "$(backtitle)" --colors --title "Storage Map" \
       --infobox "Generating Storage Map..." 3 35
@@ -612,7 +611,7 @@ function arcSummary() {
   SUMMARY+="\n>> Disks (incl. USB): \Zb${DRIVES}\Zn"
   SUMMARY+="\n>> Disks (internal): \Zb${HARDDRIVES}\Zn"
   SUMMARY+="\n>> External Controller: \Zb${EXTERNALCONTROLLER}\Zn"
-  SUMMARY+="\n>> Memory: \Zb$((${RAMTOTAL} / 1024))GB\Zn"
+  SUMMARY+="\n>> Memory: \Zb${RAMTOTAL}GB\Zn"
   dialog --backtitle "$(backtitle)" --colors --title "DSM Config Summary" \
     --extra-button --extra-label "Cancel" --msgbox "${SUMMARY}" 0 0
   RET=$?
@@ -855,7 +854,7 @@ function juniorboot() {
   if [ $? -eq 0 ]; then
     make
   fi
-  grub-editenv ${GRUB_PATH}/grubenv set next_entry="junior"
+  grub-editenv ${USER_GRUBENVFILE} set next_entry="junior"
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
     --infobox "Booting DSM Reinstall Mode...\nPlease stay patient!" 4 30
   sleep 2
@@ -871,7 +870,7 @@ function recoveryboot() {
   if [ $? -eq 0 ]; then
     make
   fi
-  grub-editenv ${GRUB_PATH}/grubenv set next_entry="recovery"
+  grub-editenv ${USER_GRUBENVFILE} set next_entry="recovery"
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
     --infobox "Booting DSM Recovery Mode...\nPlease stay patient!" 4 30
   sleep 2
@@ -885,7 +884,7 @@ function boot() {
   [ "${BUILDDONE}" == "false" ] && dialog --backtitle "$(backtitle)" --title "Alert" \
     --yesno "Config changed, you need to rebuild the Loader?" 0 0
   if [ $? -eq 0 ]; then
-    make
+    arcSummary
   fi
   dialog --backtitle "$(backtitle)" --title "Arc Boot" \
     --infobox "Booting DSM...\nPlease stay patient!" 4 25
@@ -1074,7 +1073,7 @@ else
         ;;
       i) bootipwaittime; NEXT="i" ;;
       q) [ "${DIRECTBOOT}" == "false" ] && DIRECTBOOT='true' || DIRECTBOOT='false'
-        grub-editenv "${GRUB_PATH}/grubenv" create
+        grub-editenv ${USER_GRUBENVFILE} create
         writeConfigKey "arc.directboot" "${DIRECTBOOT}" "${USER_CONFIG_FILE}"
         NEXT="q"
         ;;

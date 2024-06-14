@@ -4,7 +4,6 @@ set -e
 [[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
 . ${ARC_PATH}/include/functions.sh
-. ${ARC_PATH}/include/update.sh
 
 # Get Loader Disk Bus
 BUS=$(getBus "${LOADER_DISK}")
@@ -47,9 +46,9 @@ PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
 LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
 MACSYS="$(readConfigKey "arc.macsys" "${USER_CONFIG_FILE}")"
 CPU="$(echo $(cat /proc/cpuinfo 2>/dev/null | grep 'model name' | uniq | awk -F':' '{print $2}'))"
-RAMTOTAL=$(($(awk '/MemTotal:/ {printf "%.0f", $2 / 1024 / 1024}' /proc/meminfo 2>/dev/null) + 1))
+RAMTOTAL=$(awk '/MemTotal:/ {printf "%.0f", $2 / 1024 / 1024}' /proc/meminfo 2>/dev/null)
 RAM="${RAMTOTAL}GB"
-VENDOR="$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')"
+VENDOR=$(dmesg 2>/dev/null | grep -i "DMI:" | sed 's/\[.*\] DMI: //i')
 
 echo -e "\033[1;37mDSM:\033[0m"
 echo -e "Model: \033[1;37m${MODELID:-${MODEL}}\033[0m"
@@ -80,20 +79,19 @@ VID="$(readConfigKey "vid" "${USER_CONFIG_FILE}")"
 PID="$(readConfigKey "pid" "${USER_CONFIG_FILE}")"
 SN="$(readConfigKey "arc.sn" "${USER_CONFIG_FILE}")"
 KERNELPANIC="$(readConfigKey "arc.kernelpanic" "${USER_CONFIG_FILE}")"
-DIRECTBOOT="$(readConfigKey "arc.directboot" "${USER_CONFIG_FILE}")"
 EMMCBOOT="$(readConfigKey "arc.emmcboot" "${USER_CONFIG_FILE}")"
 DT="$(readConfigKey "platforms.${PLATFORM}.dt" "${P_FILE}")"
 KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.[${PRODUCTVER}].kver" "${P_FILE}")"
 
 declare -A CMDLINE
 
-# Build Cmdline
+# Automated Cmdline
 CMDLINE['syno_hw_version']="${MODELID:-${MODEL}}"
-[ -z "${VID}" ] && VID="0x46f4" # Sanity check
-[ -z "${PID}" ] && PID="0x0001" # Sanity check
-CMDLINE['vid']="${VID}"
-CMDLINE['pid']="${PID}"
+CMDLINE['vid']="${VID:-"0x46f4"}" # Sanity check
+CMDLINE['pid']="${PID:-"0x0001"}" # Sanity check
 CMDLINE['sn']="${SN}"
+
+# Boot Cmdline
 if grep -q "force_junior" /proc/cmdline; then
   CMDLINE['force_junior']=""
 fi
@@ -106,6 +104,8 @@ if [ ${EFI} -eq 1 ]; then
 else
   CMDLINE['noefi']=""
 fi
+
+# DSM Cmdline
 if [ $(echo "${KVER:-4}" | cut -d'.' -f1) -lt 5 ]; then
   if [ "${BUS}" != "usb" ]; then
     SZ=$(blockdev --getsz ${LOADER_DISK} 2>/dev/null) # SZ=$(cat /sys/block/${LOADER_DISK/\/dev\//}/size)
@@ -137,6 +137,7 @@ CMDLINE['loglevel']="15"
 CMDLINE['log_buf_len']="32M"
 CMDLINE["HddHotplug"]="1"
 CMDLINE["vender_format_version"]="2"
+
 #if [ -n "$(ls /dev/mmcblk* 2>/dev/null)" ] && [ "${BUS}" != "mmc" ] && [ "${EMMCBOOT}" != "true" ]; then
 #  [ "${CMDLINE['modprobe.blacklist']}" != "" ] && CMDLINE['modprobe.blacklist']+=","
 #  CMDLINE['modprobe.blacklist']+="sdhci,sdhci_pci,sdhci_acpi"
@@ -151,9 +152,10 @@ fi
 if echo "purley broadwellnkv2" | grep -wq "${PLATFORM}"; then
   CMDLINE["SASmodel"]="1"
 fi
+
 # Cmdline NIC Settings
 NIC=0
-ETHX="$(ls /sys/class/net/ 2>/dev/null | grep eth)" # real network cards list
+ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) # real network cards list
 for ETH in ${ETHX}; do
   MAC="$(readConfigKey "mac.${ETH}" "${USER_CONFIG_FILE}")"
   [ -n "${MAC}" ] && NIC=$((${NIC} + 1)) && CMDLINE["mac${NIC}"]="${MAC}"
@@ -182,37 +184,39 @@ done
 CMDLINE_LINE=$(echo "${CMDLINE_LINE}" | sed 's/^ //') # Remove leading space
 
 # Boot
+DIRECTBOOT="$(readConfigKey "arc.directboot" "${USER_CONFIG_FILE}")"
 if [ "${DIRECTBOOT}" == "true" ]; then
   CMDLINE_DIRECT=$(echo ${CMDLINE_LINE} | sed 's/>/\\\\>/g') # Escape special chars
-  grub-editenv ${GRUB_PATH}/grubenv set dsm_cmdline="${CMDLINE_DIRECT}"
-  grub-editenv ${GRUB_PATH}/grubenv set next_entry="direct"
+  grub-editenv ${USER_GRUBENVFILE} set dsm_cmdline="${CMDLINE_DIRECT}"
   echo -e "\033[1;34mReboot with Directboot\033[0m"
-  exec reboot
+  grub-editenv ${USER_GRUBENVFILE} set next_entry="direct"
+  reboot
   exit 0
 elif [ "${DIRECTBOOT}" == "false" ]; then
   BOOTIPWAIT="$(readConfigKey "arc.bootipwait" "${USER_CONFIG_FILE}")"
   [ -z "${BOOTIPWAIT}" ] && BOOTIPWAIT=20
   echo -e "\033[1;34mDetected ${NIC} NIC.\033[0m \033[1;37mWaiting for Connection:\033[0m"
+  IPCON=""
   for ETH in ${ETHX}; do
     IP=""
-    DRIVER="$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
+    DRIVER=$(ls -ld /sys/class/net/${ETH}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
     COUNT=0
     while true; do
-      IP="$(getIP ${ETH})"
+      IP=$(getIP ${ETH})
       MSG="DHCP"
       if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
         echo -e "\r\033[1;37m${DRIVER}:\033[0m NOT CONNECTED"
         break
       fi
       if [ -n "${IP}" ]; then
-        SPEED="$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')"
+        SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         if [[ "${IP}" =~ ^169\.254\..* ]]; then
           echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
         else
           echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:5000\033[0m to connect to DSM via web."
+          [ ! -n "${IPCON}" ] && IPCON="${IP}"
         fi
         ethtool -s ${ETH} wol g 2>/dev/null
-        [ ! -n "${IPCON}" ] && IPCON="${IP}"
         break
       fi
       if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
