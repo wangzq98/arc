@@ -601,6 +601,39 @@ function storagepanelMenu() {
 }
 
 ###############################################################################
+# Shows sequentialIO menu to user
+function sequentialIOMenu() {
+  CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
+  if [ "${CONFDONE}" == "true" ]; then
+    dialog --backtitle "$(backtitle)" --title "SequentialIO" \
+      --aspect 18 --msgbox "SequentialIO Addon enabled." 0 0
+    while true; do
+        dialog --backtitle "$(backtitle)" --cancel-label "Exit" --menu "SequentialIO" 0 0 0 \
+          1 "Enable for SSD Cache" \
+          2 "Disable for SSD Cache" \
+          2>"${TMP_PATH}/resp"
+        [ $? -ne 0 ] && break
+        case "$(cat ${TMP_PATH}/resp)" in
+          1)
+            dialog --backtitle "$(backtitle)" --colors --title "SequentialIO" \
+              --msgbox "SequentialIO enabled" 0 0
+            SEQUENTIAL="true"
+            ;;
+          2)
+            dialog --backtitle "$(backtitle)" --colors --title "SequentialIO" \
+              --msgbox "SequentialIO disabled" 0 0
+            SEQUENTIAL="false"
+            ;;
+        esac
+    done
+    writeConfigKey "addons.sequentialio" "${SEQUENTIAL}" "${USER_CONFIG_FILE}"
+    writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
+    BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
+  fi
+  return
+}
+
+###############################################################################
 # Shows backup menu to user
 function backupMenu() {
   NEXT="1"
@@ -852,6 +885,8 @@ function updateMenu() {
           [ -z "${TAG}" ] && return 1
         fi
         updateConfigs "${TAG}"
+        writeConfigKey "arc.key" "" "${USER_CONFIG_FILE}"
+        ARC_KEY="$(readConfigKey "arc.key" "${USER_CONFIG_FILE}")"
         writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
         BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
         ;;
@@ -2080,13 +2115,13 @@ function satadomMenu() {
 # Decrypt Menu
 function decryptMenu() {
   if [ -f "${S_FILE_ENC}" ]; then
-    CONFIGSVERSION="$(cat "${MODEL_CONFIG_PATH}/VERSION")"
+    CONFIGSVERSION=$(cat "${MODEL_CONFIG_PATH}/VERSION")
     dialog --backtitle "$(backtitle)" --colors --title "Arc Decrypt" \
       --inputbox "Enter Decryption Key for ${CONFIGSVERSION}" 7 40 2>"${TMP_PATH}/resp"
     [ $? -ne 0 ] && return
     ARC_KEY=$(cat "${TMP_PATH}/resp")
     if [ -n "${ARC_KEY}" ]; then
-      if $(openssl enc -in "${S_FILE_ENC}" -out "${S_FILE_ARC}" -d -aes-256-cbc -k "${ARC_KEY}" 2>/dev/null); then
+      if openssl enc -in "${S_FILE_ENC}" -out "${S_FILE_ARC}" -d -aes-256-cbc -k "${ARC_KEY}" 2>/dev/null; then
         dialog --backtitle "$(backtitle)" --colors --title "Arc Decrypt" \
           --msgbox "Decrypt successful: You can use Arc Patch." 5 50
         mv -f "${S_FILE}" "${S_FILE}.bak"
