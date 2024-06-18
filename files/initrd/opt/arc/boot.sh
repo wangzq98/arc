@@ -207,8 +207,7 @@ elif [ "${DIRECTBOOT}" == "false" ]; then
       if ethtool ${ETH} 2>/dev/null | grep 'Link detected' | grep -q 'no'; then
         echo -e "\r\033[1;37m${DRIVER}:\033[0m NOT CONNECTED"
         break
-      fi
-      if [ -n "${IP}" ]; then
+      elif [ -n "${IP}" ]; then
         SPEED=$(ethtool ${ETH} 2>/dev/null | grep "Speed:" | awk '{print $2}')
         if [[ "${IP}" =~ ^169\.254\..* ]]; then
           echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m LINK LOCAL (No DHCP server detected.)"
@@ -216,10 +215,8 @@ elif [ "${DIRECTBOOT}" == "false" ]; then
           echo -e "\r\033[1;37m${DRIVER} (${SPEED} | ${MSG}):\033[0m Access \033[1;34mhttp://${IP}:5000\033[0m to connect to DSM via web."
           [ ! -n "${IPCON}" ] && IPCON="${IP}"
         fi
-        ethtool -s ${ETH} wol g 2>/dev/null
         break
-      fi
-      if [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
+      elif [ ${COUNT} -gt ${BOOTIPWAIT} ]; then
         echo -e "\r\033[1;37m${DRIVER}:\033[0m TIMEOUT"
         break
       fi
@@ -229,12 +226,12 @@ elif [ "${DIRECTBOOT}" == "false" ]; then
   done
   # Exec Bootwait to check SSH/Web connection
   BOOTWAIT=5
-  w -h 2>/dev/null | awk '{print $1" "$2" "$3}' >WB
+  w -h 2>/dev/null | grep -v tty1 | awk '{print $1" "$2" "$3}' >WB
   MSG=""
   while test ${BOOTWAIT} -ge 0; do
     MSG="\033[1;33mAccess SSH/Web will interrupt boot...\033[0m"
     echo -en "\r${MSG}"
-    w -h 2>/dev/null | awk '{print $1" "$2" "$3}' >WC
+    w -h 2>/dev/null | grep -v tty1 | awk '{print $1" "$2" "$3}' >WC
     if ! diff WB WC >/dev/null 2>&1; then
       echo -en "\r\033[1;33mAccess SSH/Web detected and boot is interrupted.\033[0m\n"
       rm -f WB WC
