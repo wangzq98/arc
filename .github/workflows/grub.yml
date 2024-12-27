@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2023 AuxXxilium <https://github.com/AuxXxilium> and Ing <https://github.com/wjz304>
+# Copyright (C) 2023 AuxXxilium <https://github.com/AuxXxilium>
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
@@ -35,20 +35,10 @@ jobs:
         run: |
           . scripts/grub.sh "grub-2.12" "i386-pc i386-efi x86_64-efi"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: grub
-          path: |
-            grub.img.gz
-
       - name: Check and Push
         if: success() && inputs.push == true
         run: |
           if [ -f "grub.img.gz" ]; then
-            echo "Copy img ..."
-            mv -f grub.img.gz files/initrd/opt/arc/grub.img.gz
-
             echo "Git push ..."
             git pull
             status=$(git status -s | grep -E 'grub.img.gz' | awk '{printf " %s", $2}')

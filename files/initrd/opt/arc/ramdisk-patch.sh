@@ -2,9 +2,9 @@
 
 [[ -z "${ARC_PATH}" || ! -d "${ARC_PATH}/include" ]] && ARC_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 
-. ${ARC_PATH}/include/functions.sh
-. ${ARC_PATH}/include/addons.sh
-. ${ARC_PATH}/include/modules.sh
+. "${ARC_PATH}/include/functions.sh"
+. "${ARC_PATH}/include/addons.sh"
+. "${ARC_PATH}/include/modules.sh"
 
 set -o pipefail # Get exit code from process piped
 
@@ -30,43 +30,44 @@ PLATFORM="$(readConfigKey "platform" "${USER_CONFIG_FILE}")"
 MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
 MODELID="$(readConfigKey "modelid" "${USER_CONFIG_FILE}")"
 LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
-SN="$(readConfigKey "arc.sn" "${USER_CONFIG_FILE}")"
+SN="$(readConfigKey "sn" "${USER_CONFIG_FILE}")"
 LAYOUT="$(readConfigKey "layout" "${USER_CONFIG_FILE}")"
 KEYMAP="$(readConfigKey "keymap" "${USER_CONFIG_FILE}")"
-HDDSORT="$(readConfigKey "arc.hddsort" "${USER_CONFIG_FILE}")"
 KERNEL="$(readConfigKey "kernel" "${USER_CONFIG_FILE}")"
 RD_COMPRESSED="$(readConfigKey "rd-compressed" "${USER_CONFIG_FILE}")"
 PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
+BUILDNUM="$(readConfigKey "buildnum" "${USER_CONFIG_FILE}")"
+SMALLNUM="$(readConfigKey "smallnum" "${USER_CONFIG_FILE}")"
+ARCBRANCH="$(readConfigKey "arc.branch" "${USER_CONFIG_FILE}")"
 # Read new PAT Info from Config
-PAT_URL="$(readConfigKey "arc.paturl" "${USER_CONFIG_FILE}")"
-PAT_HASH="$(readConfigKey "arc.pathash" "${USER_CONFIG_FILE}")"
+PAT_URL="$(readConfigKey "paturl" "${USER_CONFIG_FILE}")"
+PAT_HASH="$(readConfigKey "pathash" "${USER_CONFIG_FILE}")"
 
-[ "${PATURL:0:1}" == "#" ] && PATURL=""
-[ "${PATSUM:0:1}" == "#" ] && PATSUM=""
+[ "${PATURL:0:1}" = "#" ] && PATURL=""
+[ "${PATSUM:0:1}" = "#" ] && PATSUM=""
 
 # Check if DSM Version changed
 . "${RAMDISK_PATH}/etc/VERSION"
 
-PRODUCTVERDSM="${majorversion}.${minorversion}"
-if [ "${PRODUCTVERDSM}" != "${PRODUCTVER}" ]; then
-  # Update new buildnumber
-  echo -e "Ramdisk Version ${PRODUCTVER} does not match DSM Version ${PRODUCTVERDSM}!"
-  echo -e "Try to use DSM Version ${PRODUCTVERDSM} for Patch."
-  writeConfigKey "productver" "${PRODUCTVERDSM}" "${USER_CONFIG_FILE}"
-  PRODUCTVER="$(readConfigKey "productver" "${USER_CONFIG_FILE}")"
+if [[ -n "${PRODUCTVER}" && -n "${BUILDNUM}" && -n "${SMALLNUM}" ]] &&
+  ([ "${PRODUCTVER}" != "${majorversion}.${minorversion}" ] || [ "${BUILDNUM}" != "${buildnumber}" ] || [ "${SMALLNUM}" != "${smallfixnumber}" ]); then
+  OLDVER="${PRODUCTVER}(${BUILDNUM}$([ ${SMALLNUM:-0} -ne 0 ] && echo "u${SMALLNUM}"))"
+  NEWVER="${majorversion}.${minorversion}(${buildnumber}$([ ${smallfixnumber:-0} -ne 0 ] && echo "u${smallfixnumber}"))"
   PAT_URL=""
   PAT_HASH=""
 fi
+PRODUCTVER=${majorversion}.${minorversion}
+BUILDNUM=${buildnumber}
+SMALLNUM=${smallfixnumber}
+writeConfigKey "productver" "${PRODUCTVER}" "${USER_CONFIG_FILE}"
+writeConfigKey "buildnum" "${BUILDNUM}" "${USER_CONFIG_FILE}"
+writeConfigKey "smallnum" "${SMALLNUM}" "${USER_CONFIG_FILE}"
 
 # Read model data
-KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.[${PRODUCTVER}].kver" "${P_FILE}")"
+KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.\"${PRODUCTVER}\".kver" "${P_FILE}")"
 
 # Modify KVER for Epyc7002
-if [ "${PLATFORM}" == "epyc7002" ]; then
-  KVERP="${PRODUCTVER}-${KVER}"
-else
-  KVERP="${KVER}"
-fi
+[ "${PLATFORM}" = "epyc7002" ] && KVERP="${PRODUCTVER}-${KVER}" || KVERP="${KVER}"
 
 # Sanity check
 if [ -z "${PLATFORM}" ] || [ -z "${KVER}" ]; then
@@ -92,47 +93,52 @@ while IFS=': ' read -r KEY VALUE; do
 done < <(readConfigMap "modules" "${USER_CONFIG_FILE}")
 
 # Patches (diff -Naru OLDFILE NEWFILE > xxx.patch)
-PATCHES=()
-PATCHES+=("ramdisk-etc-rc-*.patch")
-PATCHES+=("ramdisk-init-script-*.patch")
-PATCHES+=("ramdisk-post-init-script-*.patch")
-PATCHES+=("ramdisk-disable-root-pwd-*.patch")
-PATCHES+=("ramdisk-disable-disabled-ports-*.patch")
-for PE in ${PATCHES[@]}; do
+PATCHS=(
+  "ramdisk-etc-rc-*.patch"
+  "ramdisk-init-script-*.patch"
+  "ramdisk-post-init-script-*.patch"
+  "ramdisk-disable-root-pwd-*.patch"
+  "ramdisk-disable-disabled-ports-*.patch"
+)
+for PE in "${PATCHS[@]}"; do
   RET=1
   echo "Patching with ${PE}" >"${LOG_FILE}"
+  # ${PE} contains *, so double quotes cannot be added
   for PF in $(ls ${PATCH_PATH}/${PE} 2>/dev/null); do
     echo "Patching with ${PF}" >>"${LOG_FILE}"
-    (
-      cd "${RAMDISK_PATH}"
-      busybox patch -p1 -i "${PF}" >>"${LOG_FILE}" 2>&1 # busybox patch and gun patch have different processing methods and parameters.
-    )
+    # busybox patch and gun patch have different processing methods and parameters.
+    (cd "${RAMDISK_PATH}" && busybox patch -p1 -i "${PF}") >>"${LOG_FILE}" 2>&1
     RET=$?
     [ ${RET} -eq 0 ] && break
   done
   [ ${RET} -ne 0 ] && exit 1
 done
 
-# Patch /etc/synoinfo.conf
 # Add serial number to synoinfo.conf, to help to recovery a installed DSM
 echo "Set synoinfo SN" >"${LOG_FILE}"
 _set_conf_kv "SN" "${SN}" "${RAMDISK_PATH}/etc/synoinfo.conf" >>"${LOG_FILE}" 2>&1 || exit 1
+_set_conf_kv "SN" "${SN}" "${RAMDISK_PATH}/etc.defaults/synoinfo.conf" >>"${LOG_FILE}" 2>&1 || exit 1
 for KEY in ${!SYNOINFO[@]}; do
   echo "Set synoinfo ${KEY}" >>"${LOG_FILE}"
   _set_conf_kv "${KEY}" "${SYNOINFO[${KEY}]}" "${RAMDISK_PATH}/etc/synoinfo.conf" >>"${LOG_FILE}" 2>&1 || exit 1
+  _set_conf_kv "${KEY}" "${SYNOINFO[${KEY}]}" "${RAMDISK_PATH}/etc.defaults/synoinfo.conf" >>"${LOG_FILE}" 2>&1 || exit 1
 done
 
 # Patch /sbin/init.post
 grep -v -e '^[\t ]*#' -e '^$' "${PATCH_PATH}/config-manipulators.sh" >"${TMP_PATH}/rp.txt"
 sed -e "/@@@CONFIG-MANIPULATORS-TOOLS@@@/ {" -e "r ${TMP_PATH}/rp.txt" -e 'd' -e '}' -i "${RAMDISK_PATH}/sbin/init.post"
 rm -f "${TMP_PATH}/rp.txt"
-touch "${TMP_PATH}/rp.txt"
-for KEY in ${!SYNOINFO[@]}; do
-  echo "_set_conf_kv '${KEY}' '${SYNOINFO[${KEY}]}' '/tmpRoot/etc/synoinfo.conf'" >>"${TMP_PATH}/rp.txt"
-  echo "_set_conf_kv '${KEY}' '${SYNOINFO[${KEY}]}' '/tmpRoot/etc.defaults/synoinfo.conf'" >>"${TMP_PATH}/rp.txt"
-done
-echo "_set_conf_kv 'SN' '${SN}' '/tmpRoot/etc/synoinfo.conf'" >>"${TMP_PATH}/rp.txt"
-echo "_set_conf_kv 'SN' '${SN}' '/tmpRoot/etc.defaults/synoinfo.conf'" >>"${TMP_PATH}/rp.txt"
+
+# Generate synoinfo configurations
+{
+  echo "_set_conf_kv 'SN' '${SN}' '/tmpRoot/etc/synoinfo.conf'"
+  echo "_set_conf_kv 'SN' '${SN}' '/tmpRoot/etc.defaults/synoinfo.conf'"
+  for KEY in "${!SYNOINFO[@]}"; do
+    echo "_set_conf_kv '${KEY}' '${SYNOINFO[${KEY}]}' '/tmpRoot/etc/synoinfo.conf'"
+    echo "_set_conf_kv '${KEY}' '${SYNOINFO[${KEY}]}' '/tmpRoot/etc.defaults/synoinfo.conf'"
+  done
+} >"${TMP_PATH}/rp.txt"
+
 sed -e "/@@@CONFIG-GENERATED@@@/ {" -e "r ${TMP_PATH}/rp.txt" -e 'd' -e '}' -i "${RAMDISK_PATH}/sbin/init.post"
 rm -f "${TMP_PATH}/rp.txt"
 
@@ -140,32 +146,38 @@ rm -f "${TMP_PATH}/rp.txt"
 installModules "${PLATFORM}" "${KVERP}" "${!MODULES[@]}" || exit 1
 
 # Copying fake modprobe
-cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
+[ $(echo "${KVER:-4}" | cut -d'.' -f1) -lt 5 ] && cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
 # Copying LKM to /usr/lib/modules
 gzip -dc "${LKMS_PATH}/rp-${PLATFORM}-${KVERP}-${LKM}.ko.gz" >"${RAMDISK_PATH}/usr/lib/modules/rp.ko" 2>"${LOG_FILE}" || exit 1
 
 # Addons
 echo "Create addons.sh" >"${LOG_FILE}"
 mkdir -p "${RAMDISK_PATH}/addons"
-echo "#!/bin/sh" >"${RAMDISK_PATH}/addons/addons.sh"
-echo 'echo "addons.sh called with params ${@}"' >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export LOADERLABEL=\"ARC\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export LOADERVERSION=\"${ARC_VERSION}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export PLATFORM=\"${PLATFORM}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export PRODUCTVER=\"${PRODUCTVER}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export MODEL=\"${MODEL}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export MODELID=\"${MODELID}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export MLINK=\"${PAT_URL}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export MCHECKSUM=\"${PAT_HASH}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export LAYOUT=\"${LAYOUT}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
-echo "export KEYMAP=\"${KEYMAP}\"" >>"${RAMDISK_PATH}/addons/addons.sh"
+{
+  echo "#!/bin/sh"
+  echo 'echo "addons.sh called with params ${@}"'
+  echo "export LOADERLABEL=\"ARC\""
+  echo "export LOADERVERSION=\"${ARC_VERSION}\""
+  echo "export LOADERBUILD=\"${ARC_BUILD}\""
+  echo "export LOADERBRANCH=\"${ARCBRANCH}\""
+  echo "export PLATFORM=\"${PLATFORM}\""
+  echo "export MODEL=\"${MODEL}\""
+  echo "export MODELID=\"${MODELID}\""
+  echo "export PRODUCTVER=\"${PRODUCTVER}\""
+  echo "export MLINK=\"${PAT_URL}\""
+  echo "export MCHECKSUM=\"${PAT_HASH}\""
+  echo "export LAYOUT=\"${LAYOUT:-qwerty}\""
+  echo "export KEYMAP=\"${KEYMAP:-en}\""
+} >"${RAMDISK_PATH}/addons/addons.sh"
 chmod +x "${RAMDISK_PATH}/addons/addons.sh"
 
 # System Addons
-for ADDON in "redpill" "revert" "misc" "eudev" "disks" "localrss" "notify" "updatenotify" "wol"; do
+for ADDON in "redpill" "revert" "misc" "eudev" "disks" "localrss" "notify" "wol" "mountloader"; do
   PARAMS=""
-  if [ "${ADDON}" == "disks" ]; then
-    PARAMS=${HDDSORT}
+  if [ "${ADDON}" = "disks" ]; then
+    HDDSORT="$(readConfigKey "hddsort" "${USER_CONFIG_FILE}")"
+    USBMOUNT="$(readConfigKey "usbmount" "${USER_CONFIG_FILE}")"
+    PARAMS="${HDDSORT} ${USBMOUNT}"
     [ -f "${USER_UP_PATH}/${MODEL}.dts" ] && cp -f "${USER_UP_PATH}/${MODEL}.dts" "${RAMDISK_PATH}/addons/model.dts"
   fi
   installAddon "${ADDON}" "${PLATFORM}" || exit 1
@@ -175,7 +187,7 @@ done
 # User Addons
 for ADDON in ${!ADDONS[@]}; do
   PARAMS=${ADDONS[${ADDON}]}
-  installAddon "${ADDON}" "${PLATFORM}" || exit 1
+  installAddon "${ADDON}" "${PLATFORM}" || echo "Addon ${ADDON} not found"
   echo "/addons/${ADDON}.sh \${1} ${PARAMS}" >>"${RAMDISK_PATH}/addons/addons.sh" 2>>"${LOG_FILE}" || exit 1
 done
 
@@ -184,7 +196,7 @@ echo "inetd" >>"${RAMDISK_PATH}/addons/addons.sh"
 
 echo "Modify files" >"${LOG_FILE}"
 # Remove function from scripts
-[ "2" == "${BUILDNUM:0:1}" ] && sed -i 's/function //g' $(find "${RAMDISK_PATH}/addons/" -type f -name "*.sh")
+[ "2" = "${PRODUCTVER:0:1}" ] && sed -i 's/function //g' $(find "${RAMDISK_PATH}/addons/" -type f -name "*.sh")
 
 # Build modules dependencies
 # ${ARC_PATH}/depmod -a -b ${RAMDISK_PATH} 2>/dev/null
@@ -217,34 +229,37 @@ for F in "${USER_GRUB_CONFIG}" "${USER_CONFIG_FILE}" "${USER_UP_PATH}"; do
 done
 
 # Network card configuration file
-IPV6="$(readConfigKey "arc.ipv6" "${USER_CONFIG_FILE}")"
-ETHX=$(ls /sys/class/net/ 2>/dev/null | grep eth) || true
-for ETH in ${ETHX}; do
-  if [ "${IPV6}" == "true" ]; then
-    echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-  else
-    echo -e "DEVICE=${ETH}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=no" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-${ETH}"
-  fi
+for N in $(seq 0 7); do
+  echo -e "DEVICE=eth${N}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-eth${N}"
 done
 
 # SA6400 patches
-if [ "${PLATFORM}" == "epyc7002" ]; then
+if [ "${PLATFORM}" = "epyc7002" ]; then
   echo -n " - Apply Epyc7002 Fixes"
   sed -i 's#/dev/console#/var/log/lrc#g' ${RAMDISK_PATH}/usr/bin/busybox
   sed -i '/^echo "START/a \\nmknod -m 0666 /dev/console c 1 3' ${RAMDISK_PATH}/linuxrc.syno
 fi
 
 # Broadwellntbap patches
-if [ "${PLATFORM}" == "broadwellntbap" ]; then
+if [ "${PLATFORM}" = "broadwellntbap" ]; then
   echo -n " - Apply Broadwellntbap Fixes"
   sed -i 's/IsUCOrXA="yes"/XIsUCOrXA="yes"/g; s/IsUCOrXA=yes/XIsUCOrXA=yes/g' ${RAMDISK_PATH}/usr/syno/share/environments.sh
 fi
 
+# Call user patch scripts
+for F in $(ls -1 ${USER_UP_PATH}/*.sh 2>/dev/null); do
+  echo "Calling ${F}" >"${LOG_FILE}"
+  . "${F}" >>"${LOG_FILE}" 2>&1 || exit 1
+done
+
 # Reassembly ramdisk
-if [ "${RD_COMPRESSED}" == "true" ]; then
+if [ "${RD_COMPRESSED}" = "true" ]; then
   (cd "${RAMDISK_PATH}" && find . 2>/dev/null | cpio -o -H newc -R root:root | xz -9 --format=lzma >"${MOD_RDGZ_FILE}") >"${LOG_FILE}" 2>&1 || exit 1
 else
   (cd "${RAMDISK_PATH}" && find . 2>/dev/null | cpio -o -H newc -R root:root >"${MOD_RDGZ_FILE}") >"${LOG_FILE}" 2>&1 || exit 1
 fi
 
 sync
+
+# Clean
+rm -rf "${RAMDISK_PATH}"
