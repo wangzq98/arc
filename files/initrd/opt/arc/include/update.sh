@@ -2,47 +2,57 @@
 # Update Loader
 function updateLoader() {
   CONFDONE="$(readConfigKey "arc.confdone" "${USER_CONFIG_FILE}")"
-  local ARC_BRANCH="$(readConfigKey "arc.branch" "${USER_CONFIG_FILE}")"
-  local ARCMODE="$(readConfigKey "arc.mode" "${USER_CONFIG_FILE}")"
-  local ARCCONF="$(readConfigKey "${MODEL:-SA6400}.serial" "${S_FILE}")"
   local TAG="${1}"
-  [ -n "${ARCCONF}" ] && cp -f "${S_FILE}" "${TMP_PATH}/bak.yml"
-  if [ -z "${TAG}" ]; then
-    idx=0
-    while [ ${idx} -le 5 ]; do # Loop 5 times, if successful, break
-      if [ "${ARC_BRANCH}" = "dev" ]; then
-        local TAG="$(curl -m 10 -skL "https://api.github.com/repos/AuxXxilium/arc/releases" | jq -r ".[].tag_name" | grep "dev" | sort -rV | head -1)"
-      else
-        local TAG="$(curl -m 10 -skL "https://api.github.com/repos/AuxXxilium/arc/releases" | jq -r ".[].tag_name" | grep -v "dev" | sort -rV | head -1)"
-      fi
-      if [ -n "${TAG}" ]; then
-        break
-      fi
-      sleep 3
-      idx=$((${idx} + 1))
-    done
-  fi
-  if [ -n "${TAG}" ]; then
-    export URL="https://github.com/AuxXxilium/arc/releases/download/${TAG}/update-${TAG}-${ARC_BRANCH}.zip"
-    export TAG="${TAG}"
-    {
+  [ -n "${ARC_CONF}" ] && cp -f "${S_FILE}" "${TMP_PATH}/bak.yml"
+  if [ "${TAG}" != "zip" ]; then
+    if [ -z "${TAG}" ]; then
+      idx=0
+      while [ ${idx} -le 5 ]; do # Loop 5 times, if successful, break
+        if [ "${ARC_BRANCH}" = "dev" ]; then
+          TAG="$(curl -m 10 -skL "https://api.github.com/repos/AuxXxilium/arc/releases" | jq -r ".[].tag_name" | grep "dev" | sort -rV | head -1)"
+        else
+          TAG="$(curl -m 10 -skL "https://api.github.com/repos/AuxXxilium/arc/releases" | jq -r ".[].tag_name" | grep -v "dev" | sort -rV | head -1)"
+        fi
+        if [ -n "${TAG}" ]; then
+          break
+        fi
+        sleep 3
+        idx=$((${idx} + 1))
+      done
+    fi
+    if [ -n "${TAG}" ]; then
+      export URL="https://github.com/AuxXxilium/arc/releases/download/${TAG}/update-${TAG}-${ARC_BRANCH}.zip"
+      export TAG="${TAG}"
       {
-        curl -kL "${URL}" -o ${TMP_PATH}/update.zip 2>&3 3>&-
-      } 3>&1 >&4 4>&- |
-      perl -C -lane '
-        BEGIN {$header = "Downloading $ENV{URL}...\n\n"; $| = 1}
-        $pcent = $F[0];
-        $_ = join "", unpack("x3 a7 x4 a9 x8 a9 x7 a*") if length > 20;
-        s/ /\xa0/g; # replacing space with nbsp as dialog squashes spaces
-        if ($. <= 3) {
-          $header .= "$_\n";
-          $/ = "\r" if $. == 2
-        } else {
-          print "XXX\n$pcent\n$header$_\nXXX"
-        }' 4>&- |
-      dialog --gauge "Download Update: ${TAG}..." 14 72 4>&-
-    } 4>&1
+        {
+          curl -kL "${URL}" -o ${TMP_PATH}/update.zip 2>&3 3>&-
+        } 3>&1 >&4 4>&- |
+        perl -C -lane '
+          BEGIN {$header = "Downloading $ENV{URL}...\n\n"; $| = 1}
+          $pcent = $F[0];
+          $_ = join "", unpack("x3 a7 x4 a9 x8 a9 x7 a*") if length > 20;
+          s/ /\xa0/g; # replacing space with nbsp as dialog squashes spaces
+          if ($. <= 3) {
+            $header .= "$_\n";
+            $/ = "\r" if $. == 2
+          } else {
+            print "XXX\n$pcent\n$header$_\nXXX"
+          }' 4>&- |
+        dialog --gauge "Download Update: ${TAG}..." 14 72 4>&-
+      } 4>&1
+    fi
     if [ -f "${TMP_PATH}/update.zip" ] && [ $(ls -s "${TMP_PATH}/update.zip" | cut -d' ' -f1) -gt 300000 ]; then
+      if [ "${TAG}" != "zip" ]; then
+        HASHURL="https://github.com/AuxXxilium/arc/releases/download/${TAG}/update-${TAG}-${ARC_BRANCH}.hash"
+        HASH="$(curl -skL "${HASHURL}" | awk '{print $1}')"
+        if [ "${HASH}" != "$(sha256sum "${TMP_PATH}/update.zip" | awk '{print $1}')" ]; then
+          dialog --backtitle "$(backtitle)" --title "Update Loader" --aspect 18 \
+            --infobox "Update failed - Hash mismatch!\nTry again later." 0 0
+          sleep 3
+          exec reboot
+        fi
+      fi
+      rm -rf "/mnt/update"
       mkdir -p "${TMP_PATH}/update"
       dialog --backtitle "$(backtitle)" --title "Update Loader" \
         --infobox "Updating Loader..." 3 50
@@ -51,12 +61,12 @@ function updateLoader() {
         rm -rf "${TMP_PATH}/update"
         rm -f "${TMP_PATH}/update.zip"
       fi
-      if [ "$(cat "${PART1_PATH}/ARC-VERSION")" = "${TAG}" ]; then
+      if [ "$(cat "${PART1_PATH}/ARC-VERSION")" = "${TAG}" ] || [ "${TAG}" = "zip" ]; then
         dialog --backtitle "$(backtitle)" --title "Update Loader" \
         --infobox "Update Loader successful!" 3 50
         sleep 2
       else
-        if [ "${ARCMODE}" = "update" ]; then
+        if [ "${ARC_MODE}" = "update" ]; then
           dialog --backtitle "$(backtitle)" --title "Update Loader" --aspect 18 \
             --infobox "Update failed!\nTry again later." 0 0
           sleep 3
@@ -66,7 +76,7 @@ function updateLoader() {
         fi
       fi
     else
-      if [ "${ARCMODE}" = "update" ]; then
+      if [ "${ARC_MODE}" = "update" ]; then
         dialog --backtitle "$(backtitle)" --title "Update Loader" --aspect 18 \
           --infobox "Update failed!\nTry again later." 0 0
         sleep 3
@@ -76,8 +86,8 @@ function updateLoader() {
       fi
     fi
   fi
-  [ -n "${ARCCONF}" ] && cp -f "${TMP_PATH}/bak.yml" "${S_FILE}"
-  if [ "${ARCMODE}" = "update" ] && [ "${CONFDONE}" = "true" ]; then
+  [ -n "${ARC_CONF}" ] && cp -f "${TMP_PATH}/bak.yml" "${S_FILE}"
+  if [ "${ARC_MODE}" = "update" ] && [ "${CONFDONE}" = "true" ]; then
     dialog --backtitle "$(backtitle)" --title "Update Loader" --aspect 18 \
       --infobox "Update Loader successful! -> Reboot to automated Build Mode..." 3 60
     sleep 3
@@ -445,11 +455,16 @@ function updateLKMs() {
 ###############################################################################
 # Update Offline
 function updateOffline() {
-  local ARCOFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
-  if [ "${ARCOFFLINE}" != "true" ]; then
-    [ -f "${MODEL_CONFIG_PATH}/data.yml" ] && cp -f "${MODEL_CONFIG_PATH}/data.yml" "${MODEL_CONFIG_PATH}/data.yml.bak"
+  local ARC_OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
+  if [ "${ARC_OFFLINE}" != "true" ]; then
+    [ -f "${MODEL_CONFIG_PATH}/data.yml" ] && cp -f "${MODEL_CONFIG_PATH}/data.yml" "${MODEL_CONFIG_PATH}/data.yml.bak" || true
     curl -skL "https://raw.githubusercontent.com/AuxXxilium/arc-dsm/refs/heads/main/data.yml" -o "${MODEL_CONFIG_PATH}/data.yml"
-    [ ! -f "${MODEL_CONFIG_PATH}/data.yml" ] && cp -f "${MODEL_CONFIG_PATH}/data.yml.bak" "${MODEL_CONFIG_PATH}/data.yml"
+    
+    # Check file size and restore backup if necessary
+    local FILESIZE=$(stat -c%s "${MODEL_CONFIG_PATH}/data.yml")
+    if [ "${FILESIZE}" -lt 3072 ]; then
+      cp -f "${MODEL_CONFIG_PATH}/data.yml.bak" "${MODEL_CONFIG_PATH}/data.yml"
+    fi
   fi
   return 0
 }
@@ -457,34 +472,24 @@ function updateOffline() {
 ###############################################################################
 # Loading Update Mode
 function dependenciesUpdate() {
-  BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-  FAILED="false"
   dialog --backtitle "$(backtitle)" --title "Update Dependencies" --aspect 18 \
     --infobox "Updating Dependencies..." 3 40
   sleep 2
-  updateAddons
-  [ $? -ne 0 ] && FAILED="true"
-  updateModules
-  [ $? -ne 0 ] && FAILED="true"
-  updateCustom
-  [ $? -ne 0 ] && FAILED="true"
-  updatePatches
-  [ $? -ne 0 ] && FAILED="true"
-  updateLKMs
-  [ $? -ne 0 ] && FAILED="true"
-  updateOffline
-  [ $? -ne 0 ] && FAILED="true"
+
+  FAILED="false"
+  for updateFunction in updateAddons updateModules updateCustom updatePatches updateLKMs updateOffline; do
+    $updateFunction || FAILED="true"
+  done
+
   if [ "${FAILED}" = "true" ]; then
     dialog --backtitle "$(backtitle)" --title "Update Dependencies" --aspect 18 \
       --infobox "Update Dependencies failed! Try again later." 3 40
-    sleep 3
-  elif [ "${FAILED}" = "false" ]; then
+  else
     dialog --backtitle "$(backtitle)" --title "Update Dependencies" --aspect 18 \
       --infobox "Update Dependencies successful!" 3 40
     writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
-    BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-    sleep 3
-    clear
-    ./arc.sh
   fi
+  sleep 3
+  clear
+  exec arc.sh
 }

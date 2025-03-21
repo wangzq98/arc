@@ -11,7 +11,7 @@ function availableAddons() {
   local PAT_URL="$(readConfigKey "paturl" "${USER_CONFIG_FILE}")"
   for D in $(find "${ADDONS_PATH}" -maxdepth 1 -type d 2>/dev/null | sort); do
     [ ! -f "${D}/manifest.yml" ] && continue
-    local ADDON=$(basename ${D})
+    local ADDON=$(basename "${D}")
     local AVAILABLE="$(readConfigKey "${1}" "${D}/manifest.yml")"
     [ "${AVAILABLE}" = false ] && continue
     local SYSTEM=$(readConfigKey "system" "${D}/manifest.yml")
@@ -19,7 +19,7 @@ function availableAddons() {
     if [[ "${ARCOFFLINE}" = "true" || -z "${ARCCONF}" ]] && [[ "${ADDON}" = "amepatch" || "${ADDON}" = "arcdns" ]]; then
       continue
     fi
-    if [ "${MACHINE}" != "Native" ] && [ "${ADDON}" = "cpufreqscaling" ]; then
+    if [ "${MACHINE}" != "physical" ] && [ "${ADDON}" = "cpufreqscaling" ]; then
       continue
     fi
     if echo "${PAT_URL}" 2>/dev/null | grep -vq "7.2.2"; then
@@ -67,14 +67,10 @@ function installAddon() {
   fi
   local ADDON="${1}"
   mkdir -p "${TMP_PATH}/${ADDON}"
-  local HAS_FILES=0
   # First check generic files
   if [ -f "${ADDONS_PATH}/${ADDON}/all.tgz" ]; then
     tar -zxf "${ADDONS_PATH}/${ADDON}/all.tgz" -C "${TMP_PATH}/${ADDON}"
-    HAS_FILES=1
   fi
-  # If has files to copy, copy it, else return error
-  [ ${HAS_FILES} -ne 1 ] && return 1
   cp -f "${TMP_PATH}/${ADDON}/install.sh" "${RAMDISK_PATH}/addons/${ADDON}.sh" 2>"${LOG_FILE}"
   chmod +x "${RAMDISK_PATH}/addons/${ADDON}.sh"
   [ -d ${TMP_PATH}/${ADDON}/root ] && (cp -rnf "${TMP_PATH}/${ADDON}/root/"* "${RAMDISK_PATH}/" 2>"${LOG_FILE}")
@@ -112,4 +108,20 @@ function updateAddon() {
     tar -xaf "${F}" -C "${ADDONS_PATH}/${ADDON}"
     rm -f "${F}"
   done
+}
+
+###############################################################################
+# Read Addon Key
+# 1 - Addon
+# 2 - key
+function readAddonKey() {
+  if [ -z "${1}" ] || [ -z "${2}" ]; then
+    echo ""
+    return 1
+  fi
+  if [ ! -f "${ADDONS_PATH}/${1}/manifest.yml" ]; then
+    echo ""
+    return 1
+  fi
+  readConfigKey "${2}" "${ADDONS_PATH}/${1}/manifest.yml"
 }
